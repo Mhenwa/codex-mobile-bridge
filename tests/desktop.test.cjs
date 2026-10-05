@@ -70,7 +70,7 @@ test('development launch keeps script as its own argument',()=>{
 async function renderer(initialLanguage='zh-CN'){
   const fs=require('node:fs'),vm=require('node:vm');
   const nodes=new Map();
-  function node(){return {closest(){return null;},value:'',checked:false,hidden:false,textContent:'',dataset:{},
+  function node(){return {closest(){return null;},value:'',checked:false,hidden:false,open:false,textContent:'',dataset:{},
     classList:{toggle(){}},append(){},replaceChildren(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return [];}};}
   const html=fs.readFileSync(path.join(__dirname,'../desktop/index.html'),'utf8');
   for(const match of html.matchAll(/\bid="([^"]+)"/g))nodes.set(match[1],node());
@@ -216,6 +216,62 @@ test('connection additions and removals are unsaved, and language changes preser
   assert.equal(ui.nodes.get('dirty-dot').hidden,false);
   ui.nodes.get('language').value='zh';await ui.nodes.get('language').onchange();
   assert.equal(ui.nodes.get('status').textContent,'未启动');
+});
+
+test('Connect controls stay out of settings dirty fields after moving into Network',async()=>{
+  const ui=await renderer();
+  const settings=ui.nodes.get('settings');
+  const connectRoot={id:'connect-content'};
+  const connectName={id:'connect-name',type:'text',value:'Fixture computer',checked:false,
+    closest:selector=>selector==='#connect-content'?connectRoot:null};
+  const port={id:'port',type:'number',value:'8787',checked:false,
+    closest:selector=>selector==='[data-panel]'?{dataset:{panel:'network'}}:null};
+  const portOriginal=port.closest;port.closest=selector=>selector==='#connect-content'?null:portOriginal(selector);
+  settings.querySelectorAll=()=>[connectName,port];
+  ui.run('savedFields=fieldValues()');
+
+  connectName.value='A different computer';
+  ui.run('updateDirty()');
+  assert.equal(ui.run('dirty'),false);
+  assert.equal(ui.nodes.get('dirty-dot').hidden,true);
+
+  port.value='9876';
+  ui.run('updateDirty()');
+  assert.equal(ui.run('dirty'),true);
+  assert.equal(ui.nodes.get('dirty-dot').hidden,false);
+  const auth=ui.run('collect().auth');
+  assert.equal(auth.sessionHours,12);assert.equal(auth.mode,'password');
+  assert.equal(auth.username,'admin');assert.equal(auth.password,'');
+});
+
+test('Network advanced options start collapsed and control save-bar visibility without losing dirty state',async()=>{
+  const ui=await renderer();
+  const advanced=ui.nodes.get('network-advanced'),saveBar=ui.nodes.get('save-bar'),settings=ui.nodes.get('settings');
+  const port={id:'port',type:'number',value:'8787',checked:false,
+    closest:selector=>selector==='[data-panel]'?{dataset:{panel:'network'}}:null};
+  settings.querySelectorAll=()=>[port];
+  ui.run('savedFields=fieldValues()');
+  ui.context.tab('network');
+
+  assert.equal(advanced.open,false,'network advanced details must default to collapsed');
+  assert.equal(saveBar.hidden,true,'clean collapsed Network page hides the save bar');
+  advanced.open=true;advanced.ontoggle();
+  assert.equal(saveBar.hidden,false,'opening advanced options exposes the save bar');
+  advanced.open=false;advanced.ontoggle();
+  assert.equal(saveBar.hidden,true,'closing clean advanced options hides the save bar');
+
+  port.value='9876';ui.run('updateDirty()');
+  assert.equal(ui.run('dirty'),true);
+  assert.equal(saveBar.hidden,false,'a dirty advanced field keeps the save bar visible while collapsed');
+  advanced.open=true;advanced.ontoggle();advanced.open=false;advanced.ontoggle();
+  assert.equal(saveBar.hidden,false,'opening and closing advanced options cannot hide unsaved changes');
+});
+
+test('legacy Connect tab navigation aliases the Network page',async()=>{
+  const ui=await renderer();
+  ui.context.tab('connect');
+  assert.equal(ui.run('activeTab'),'network');
+  assert.equal(ui.nodes.get('page-title').textContent,'网络与登录');
 });
 
 test('opening logs starts at the newest records without changing their contents',async()=>{

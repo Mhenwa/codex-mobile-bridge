@@ -3,8 +3,9 @@
 // receives the API key or device token, and never makes its own network request.
 (()=>{
   const api=window.bridgeDesktop,$=id=>document.getElementById(id);
-  const panel=document.querySelector('[data-panel="connect"]');
+  const panel=document.querySelector('[data-panel="network"]');
   if(!panel||!api?.connect)return;
+  $('connect-actions').onsubmit=event=>event.preventDefault();
   let current=null,busy=false,polling=false,grantExpires=0;
   const text=(tag,value)=>{const node=document.createElement(tag);node.textContent=String(value??'');return node;};
   function note(message,error=false){$('connect-feedback').textContent=String(message).replace(/^Error invoking remote method '[^']+': (?:Error: )?/,'');$('connect-feedback').classList.toggle('error',error);}

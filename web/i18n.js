@@ -2,6 +2,8 @@
 // UI messages only. Never translate chat content, commands, model IDs or user input.
 const BridgeI18n=(()=>{
 const en={
+"高级选项":"Advanced options",
+"在“网络与登录”底部展开“高级选项”，添加并启用“临时 HTTPS · Cloudflare”，保存配置。可以同时保留局域网连接。":"At the bottom of Network and login, expand Advanced options, add and enable Temporary HTTPS · Cloudflare, then save. LAN access can stay enabled.",
 "网关启动与入口通知":"Gateway startup and entry notifications",
 "每次启动网关及入口变化时发送地址":"Send addresses on every gateway start and entry change",
 "网关名称（可选）":"Gateway name (optional)",

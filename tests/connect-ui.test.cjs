@@ -18,13 +18,33 @@ function fixture(){
     phones:()=>({phones:[{id:'fixture-phone',name:'Fixture phone'}]}),register:()=>state,
     approve:()=>({ok:true}),'revoke-phone':()=>({ok:true}),disable:()=>({...state,enabled:false,state:'disabled',message:'closed'}),
     pair:()=>({image:'data:image/png;base64,fixture',expires:Date.now()/1000+30})};
-  const document={hidden:false,getElementById:get,querySelector:()=>panel,createElement:tag=>new Node(tag)};
+  // Connect is rendered inside the Network tab after the layout merge. Keep
+  // this selector exact so a stale `[data-panel="connect"]` lookup cannot
+  // silently pass the polling tests.
+  const document={hidden:false,getElementById:get,
+    querySelector:selector=>selector==='[data-panel="network"]'?panel:null,
+    createElement:tag=>new Node(tag)};
   const context={window:{confirm:()=>true,bridgeDesktop:{connect:async value=>{calls.push(value);return handlers[value.action]();}}},
     document,MutationObserver:class{constructor(callback){observer=callback;}observe(){}},setInterval:callback=>{interval=callback;},console,Date};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../desktop/connect.js'),'utf8'),context);
   return {get,calls,handlers,state,panel,show:()=>observer(),tick:()=>interval(),context};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('Network is the single Connect host and legacy settings are collapsed under Advanced',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../desktop/index.html'),'utf8');
+  assert.equal((html.match(/data-tab="connect"/g)||[]).length,0);
+  assert.equal((html.match(/data-panel="connect"/g)||[]).length,0);
+  assert.equal((html.match(/data-tab="network"/g)||[]).length,1);
+  assert.equal((html.match(/data-panel="network"/g)||[]).length,1);
+  const detailsStart=html.indexOf('<details id="network-advanced"');
+  assert.ok(detailsStart>html.indexOf('<div id="connect-content"'),'Connect content precedes legacy settings');
+  const detailsTag=html.slice(detailsStart,html.indexOf('>',detailsStart)+1);
+  assert.doesNotMatch(detailsTag,/\bopen(?:\s|=|>)/,'legacy settings start collapsed');
+  for(const id of ['lan','lan-scope','lan-addresses','local-access','port','connections','connection-kind','origins','auth-mode','username','session-hours','password']){
+    assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1,id+' remains available exactly once');
+  }
+});
 
 test('register requires explicit consent and provider choice, never asks renderer for a key',async()=>{
   const ui=fixture();await ui.get('connect-register').onclick();assert.equal(ui.calls.length,0);
@@ -35,6 +55,13 @@ test('register requires explicit consent and provider choice, never asks rendere
   assert.equal(ui.calls[1].provider,'fixture-provider');assert.equal(ui.calls[1].deviceName,'Fixture computer');
   assert.deepEqual(Object.keys(ui.calls[1]).sort(),['action','consent','deviceName','provider']);
   assert.match(ui.get('connect-feedback').textContent,/重新启动/);
+});
+
+test('Connect action form never submits the surrounding settings form',()=>{
+  const ui=fixture(),event={prevented:0,preventDefault(){this.prevented++;}};
+  assert.equal(typeof ui.get('connect-actions').onsubmit,'function');
+  ui.get('connect-actions').onsubmit(event);
+  assert.equal(event.prevented,1);
 });
 
 test('paired phone is not auto-approved and explicit local approval uses exact claim identity',async()=>{

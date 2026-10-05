@@ -4,10 +4,10 @@ let connectionDraft=[],savedConnections='[]',lanDraft=[],savedLan='[]';
 let snapshot,dirty=false,loading=false,startingUntil=0,activeTab='overview',savedFields={},feedbackKind='',lastFeedback;
 const busyActions=new Set();
 let startPending=false,cloudflaredBusy=false,cloudflaredResult=null,cloudflaredProgress=null;
-const titles={connect:'Mhenwa Connect',overview:t('连接与状态'),network:t('网络与登录'),devices:t('登录设备'),notifications:t('手机通知'),advanced:t('运行配置'),accounts:t('账号与接入'),account:t('账户与额度'),updates:t('应用更新'),logs:t('运行日志')};
+const titles={overview:t('连接与状态'),network:t('网络与登录'),devices:t('登录设备'),notifications:t('手机通知'),advanced:t('运行配置'),accounts:t('账号与接入'),account:t('账户与额度'),updates:t('应用更新'),logs:t('运行日志')};
 const accountPanel=new AccountPanel({root:$('account-content'),button:$('account-button'),read:refresh=>api.account({action:'read',refresh}),consume:value=>api.account({action:'consume',...value}),onHidden:()=>{$('account-details').open=false;},visible:()=>activeTab==='accounts'&&!document.hidden&&$('account-details').open});
 const watchPanel=new WatchPanel({root:$('watches'),change:value=>api.notificationWatches(value)});
-function fields(){return [...$('settings').querySelectorAll('input,textarea,select')].filter(node=>!node.closest('#watches')&&!node.closest('#connections')&&!node.closest('#lan-addresses')&&node.id!=='connection-kind');}
+function fields(){return [...$('settings').querySelectorAll('input,textarea,select')].filter(node=>!node.closest('#connect-content')&&!node.closest('#watches')&&!node.closest('#connections')&&!node.closest('#lan-addresses')&&node.id!=='connection-kind');}
 function fieldValues(){return Object.fromEntries(fields().map(node=>[node.id,node.type==='checkbox'?node.checked:node.value]));}
 function updateDirty(){
   const changed=new Set();
@@ -21,13 +21,14 @@ function updateDirty(){
   }
   $('dirty-dot').hidden=!dirty;
   $('dirty-label').textContent=dirty?t('有未保存的修改'):t('配置已保存');
-  $('save-bar').hidden=!dirty&&!['network','notifications','advanced'].includes(activeTab);
+  $('save-bar').hidden=!(dirty||['notifications','advanced'].includes(activeTab)||(activeTab==='network'&&$('network-advanced').open));
   document.querySelectorAll('[data-connection-action]').forEach(button=>button.disabled=dirty||busyActions.has(button.dataset.key)||!connectionDraft.find(c=>c.id===button.dataset.connection)?.enabled);
 }
 function feedback(text,error=false,kind=''){lastFeedback=[text,error,kind];text=t(text.replace(/^Error invoking remote method '[^']+': (?:Error: )?/,''));feedbackKind=kind;$('error').hidden=!error;$('feedback').hidden=error;const target=$(error?'error':'feedback');if(target.textContent!==text)target.textContent=text;}
-function tab(name){if(name==='account')name='accounts';activeTab=name;if(name==='accounts'){accountsPanel?.refresh();}document.querySelectorAll('[data-panel]').forEach(node=>node.hidden=node.dataset.panel!==name);document.querySelectorAll('[data-tab]').forEach(node=>node.classList.toggle('active',node.dataset.tab===name));$('page-title').textContent=t(titles[name]);if(snapshot)updateDirty();if(name==='logs')loadLogs();if(name==='devices')loadDevices();if(snapshot)renderUpdate();}
+function tab(name){if(name==='connect')name='network';if(name==='account')name='accounts';activeTab=name;if(name==='accounts'){accountsPanel?.refresh();}document.querySelectorAll('[data-panel]').forEach(node=>node.hidden=node.dataset.panel!==name);document.querySelectorAll('[data-tab]').forEach(node=>node.classList.toggle('active',node.dataset.tab===name));$('page-title').textContent=t(titles[name]);if(snapshot)updateDirty();if(name==='logs')loadLogs();if(name==='devices')loadDevices();if(snapshot)renderUpdate();}
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>tab(button.dataset.tab));
 document.querySelectorAll('[data-jump]').forEach(button=>button.onclick=()=>tab(button.dataset.jump));
+$('network-advanced').ontoggle=()=>{if(snapshot)updateDirty();};
 $('settings').oninput=$('settings').onchange=()=>{if(snapshot){updateDirty();}};
 function renderLan(){
   const rows=[...(snapshot?.networkInterfaces||[])];
