@@ -46,15 +46,16 @@ test('Network is the single Connect host and legacy settings are collapsed under
   }
 });
 
-test('register requires explicit consent and provider choice, never asks renderer for a key',async()=>{
+test('register validates the provider and uses API Key qualification without a renderer consent checkbox',async()=>{
   const ui=fixture();await ui.get('connect-register').onclick();assert.equal(ui.calls.length,0);
-  assert.match(ui.get('connect-feedback').textContent,/同意/);
-  ui.get('connect-consent').checked=true;await ui.get('connect-register').onclick();assert.equal(ui.calls.length,0);
+  assert.match(ui.get('connect-feedback').textContent,/检测并选择/);
   await ui.get('connect-discover').onclick();assert.deepEqual(ui.calls.map(value=>value.action),['discover']);
   await ui.get('connect-register').onclick();assert.equal(ui.calls[1].action,'register');assert.equal(ui.calls[1].consent,true);
   assert.equal(ui.calls[1].provider,'fixture-provider');assert.equal(ui.calls[1].deviceName,'Fixture computer');
   assert.deepEqual(Object.keys(ui.calls[1]).sort(),['action','consent','deviceName','provider']);
   assert.match(ui.get('connect-feedback').textContent,/重新启动/);
+  const source=fs.readFileSync(path.join(__dirname,'../desktop/index.html'),'utf8');
+  assert.doesNotMatch(source,/connect-consent/);assert.match(source,/注册时会使用当前配置中的 API Key/);
 });
 
 test('Connect action form never submits the surrounding settings form',()=>{

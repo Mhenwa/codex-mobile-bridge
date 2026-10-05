@@ -21,7 +21,7 @@ function text(node){return node.children.map(child=>child.tag==='#text'?child.va
 function load(){return fs.readFileSync(path.join(__dirname,'../desktop/index.html'),'utf8');}
 
 test('network tab owns Mhenwa Connect and keeps legacy settings in a collapsed advanced block',()=>{
-  const root=parse(load()),nodes=all(root),tabs=nodes.filter(n=>n.tag==='button'&&n.attrs['data-tab']);
+  const html=load(),root=parse(html),nodes=all(root),tabs=nodes.filter(n=>n.tag==='button'&&n.attrs['data-tab']);
   assert.equal(tabs.filter(n=>n.attrs['data-tab']==='network').length,1);
   assert.equal(tabs.filter(n=>n.attrs['data-tab']==='connect').length,0);
   const network=nodes.find(n=>n.attrs['data-panel']==='network');assert.ok(network);
@@ -36,13 +36,14 @@ test('network tab owns Mhenwa Connect and keeps legacy settings in a collapsed a
   for(const id of ['lan','lan-scope','lan-addresses','local-access','port','network-lock','connections','connection-kind','add-connection','origins','auth-mode','username','session-hours','password']){
     const matches=nodes.filter(n=>n.attrs.id===id);assert.equal(matches.length,1,id+' unique');let parent=matches[0];while(parent&&parent!==advanced)parent=parent.parent;assert.equal(parent,advanced,id+' in advanced');
   }
-  for(const id of ['connect-state','connect-device','connect-discover','connect-provider','connect-name','connect-consent','connect-register','connect-pair','connect-pairings','connect-phones']){
+  for(const id of ['connect-state','connect-device','connect-discover','connect-provider','connect-name','connect-register','connect-pair','connect-pairings','connect-phones']){
     const node=nodes.find(n=>n.attrs.id===id);assert.ok(node,id+' present');let parent=node;while(parent&&parent!==connect)parent=parent.parent;assert.equal(parent,connect,id+' in Connect');
   }
   for(const id of ['connect-refresh','connect-disable','connect-discover','connect-register','connect-pair']){
     const node=nodes.find(n=>n.attrs.id===id);assert.equal(node.attrs.type,'button',id+' explicit button type');
   }
-  for(const id of ['connect-provider','connect-name','connect-consent'])assert.equal(nodes.find(n=>n.attrs.id===id).attrs.form,'connect-actions',id+' isolated form owner');
+  assert.doesNotMatch(html,/connect-consent/);
+  for(const id of ['connect-provider','connect-name'])assert.equal(nodes.find(n=>n.attrs.id===id).attrs.form,'connect-actions',id+' isolated form owner');
 });
 
 test('renderer and Connect controller bind to merged network panel and isolate registration controls',()=>{

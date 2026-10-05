@@ -17,7 +17,6 @@
     $('connect-discover').disabled=busy||value.enabled;
     $('connect-pair').disabled=busy||value.state!=='online';
     $('connect-disable').disabled=busy||!value.enabled;
-    $('connect-consent').disabled=value.enabled;
   }
   async function command(value){
     if(busy)return;
@@ -76,7 +75,6 @@
     }catch{}
   };
   $('connect-register').onclick=async()=>{
-    if(!$('connect-consent').checked){note('请先阅读并勾选明确同意',true);return;}
     if(!$('connect-provider').value){note('请先检测并选择当前提供商',true);return;}
     try{
       const value=await command({action:'register',consent:true,provider:$('connect-provider').value,deviceName:$('connect-name').value});
