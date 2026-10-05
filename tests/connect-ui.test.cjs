@@ -55,7 +55,7 @@ test('register validates the provider and uses API Key qualification without a r
   assert.deepEqual(Object.keys(ui.calls[1]).sort(),['action','consent','deviceName','provider']);
   assert.match(ui.get('connect-feedback').textContent,/重新启动/);
   const source=fs.readFileSync(path.join(__dirname,'../desktop/index.html'),'utf8');
-  assert.doesNotMatch(source,/connect-consent/);assert.match(source,/注册时会使用当前配置中的 API Key/);
+  assert.doesNotMatch(source,/connect-consent/);assert.match(source,/注册时会使用当前配置中的 API Key 验证 Mhenwa 服务资格/);
 });
 
 test('Connect action form never submits the surrounding settings form',()=>{
