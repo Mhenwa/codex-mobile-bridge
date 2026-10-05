@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mhenwa Codex Connect · 连接你的电脑</title>
+  <link rel="stylesheet" href="/connect/pair.css">
+</head>
+<body>
+<main>
+  <p class="brand">MHENWA <span>CODEX CONNECT</span></p>
+  <h1>把电脑上的 Codex，带到手机上。</h1>
+  <p>聊天和任务仍在你的电脑执行。手机只连接你明确授权的设备。</p>
+  <section id="pairing">
+    <h2 id="heading">在电脑客户端扫码连接</h2>
+    <p id="status" role="status" aria-live="polite">打开电脑上的 Mhenwa Connect，开启远程连接并生成配对二维码。</p>
+    <form id="claim-form" hidden>
+      <label for="phone-name">给这部手机起个名字</label>
+      <input id="phone-name" maxlength="80" autocomplete="off" value="我的手机" required>
+      <button type="submit" id="claim">请求配对</button>
+    </form>
+    <p id="error" role="alert" hidden></p>
+    <a id="enter" href="/" hidden>进入已授权电脑</a>
+  </section>
+  <footer>不会要求你在手机输入模型 API Key。新手机需要在电脑端确认；电脑可随时撤销授权。连接服务使用传输加密，不等于端到端加密。</footer>
+</main>
+<script src="/connect/pair.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+services:
+  eligibility:
+    build:
+      context: ../..
+      dockerfile: deploy/connect/Dockerfile
+    image: mhenwa-connect:local
+    # Existing New API data directory is root-owned 0700. Do not broaden its ACL.
+    # This narrow sidecar retains UID 0 only to read the bind, has no capabilities,
+    # no writable rootfs, and no writable DB mount. Relay runs as UID 10001.
+    user: "0:0"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ["127.0.0.1:18788:18788"]
+    volumes:
+      - ${NEW_API_DATA:?set NEW_API_DATA}:/new-api-data:ro
+      - ${CONNECT_RPC_SECRET_FILE:?set CONNECT_RPC_SECRET_FILE}:/run/secrets/eligibility:ro
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    command:
+      - python
+      - -m
+      - connect.eligibility
+      - --db
+      - /new-api-data/new-api.db
+      - --secret-file
+      - /run/secrets/eligibility
+      - --host
+      - 0.0.0.0
+      - --allow-container-bind
+      - --port
+      - "18788"
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: {max-size: "2m", max-file: "2"}

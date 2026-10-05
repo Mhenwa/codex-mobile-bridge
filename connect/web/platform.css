@@ -1,0 +1,2 @@
+/* Presentation preferences cannot re-enable desktop-only administration. */
+#accounts-button,#account-button,#pushplus-settings,#settings-accounts,#settings-pushplus{display:none!important}

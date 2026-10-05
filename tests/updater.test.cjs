@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path');
 const {generateKeyPairSync,sign,createHash}=require('node:crypto');
 const {buildManifest}=require('../scripts/sign-update.cjs');
-const {Updater,manifest,compare,assetName,releaseUrl,allowedUrl,RELEASES,transfer}=require('../desktop/updater.cjs');
+const {Updater,manifest,compare,assetName,releaseUrl,allowedUrl,REPO,RELEASES,transfer}=require('../desktop/updater.cjs');
 const keys=generateKeyPairSync('ed25519');
 const current='0.2.0-beta.5',next='0.2.0-beta.6',platform='darwin',arch='arm64';
 function signed(value,key=keys.privateKey){const payload=Buffer.from(JSON.stringify(value));return Buffer.from(JSON.stringify({payload:payload.toString('base64'),signature:sign(null,payload,key).toString('base64')}));}
@@ -57,7 +57,19 @@ test('manifest rejects downgrades, wrong architecture, incomplete hashes and fil
 test('network allowlist rejects external destinations, credentials and non-HTTPS URLs',()=>{
   assert.equal(allowedUrl(RELEASES),RELEASES);
   assert.ok(allowedUrl(releaseUrl(next,'bridge-update.json')));
-  for(const url of ['http://github.com/try2love/codex-mobile-bridge/releases/download/v1/x','https://evil.example/update','https://user@github.com/try2love/codex-mobile-bridge/releases/download/v1/x','https://github.com/other/repo/releases/download/v1/x'])assert.throws(()=>allowedUrl(url));
+  for(const url of ['http://github.com/Mhenwa/codex-mobile-bridge/releases/download/v1/x','https://evil.example/update','https://user@github.com/Mhenwa/codex-mobile-bridge/releases/download/v1/x','https://github.com/other/repo/releases/download/v1/x'])assert.throws(()=>allowedUrl(url));
+});
+
+test('fork update discovery and assets are pinned to Mhenwa, never the upstream personal edition',()=>{
+  assert.equal(REPO,'Mhenwa/codex-mobile-bridge');
+  assert.equal(RELEASES,'https://api.github.com/repos/Mhenwa/codex-mobile-bridge/releases?per_page=100');
+  assert.equal(releaseUrl(next,'bridge-update.json'),`https://github.com/Mhenwa/codex-mobile-bridge/releases/download/v${next}/bridge-update.json`);
+  assert.match(validate(signed(info())).asset.url,/^https:\/\/github\.com\/Mhenwa\/codex-mobile-bridge\/releases\/download\//);
+  for(const url of [
+    'https://api.github.com/repos/try2love/codex-mobile-bridge/releases?per_page=100',
+    `https://github.com/try2love/codex-mobile-bridge/releases/download/v${next}/bridge-update.json`,
+    `https://github.com/try2love/codex-mobile-bridge/releases/download/v${next}/${assetName(next,platform,arch)}`,
+  ])assert.throws(()=>allowedUrl(url),/来源检查/);
 });
 async function fixture(t,{packageBytes=bytes,releases,key=keys.publicKey,apply=async()=>{}}={}){
   await fs.mkdir(path.join(__dirname,'../.tmp'),{recursive:true});const directory=await fs.mkdtemp(path.join(__dirname,'../.tmp/update-test-'));

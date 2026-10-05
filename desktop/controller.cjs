@@ -2,12 +2,12 @@
 const {spawn}=require('node:child_process');
 const path=require('node:path');
 function runWorker({executable,prefix=[],dataDir},action,payload){
-  const allowed=new Set(['snapshot','save','start','stop','logs','test-notification','deployment','export-deployment','check-entry','devices','pairing','account', 'accounts','notification-watches','update-prepare']);
+  const allowed=new Set(['snapshot','save','start','stop','logs','test-notification','deployment','export-deployment','check-entry','devices','pairing','connect','account', 'accounts','notification-watches','update-prepare']);
   if(!allowed.has(action))return Promise.reject(Error('未知操作'));
   return new Promise((resolve,reject)=>{
     const child=spawn(executable,[...prefix,action,'--data-dir',dataDir],{stdio:['pipe','pipe','pipe'],windowsHide:true});
     let output='',error='';
-    const timer=setTimeout(()=>{child.kill();reject(Error('本地操作超时，请检查运行日志'));},action==='update-prepare'?180000:['account','accounts'].includes(action)?110000:action==='notification-watches'?45000:25000);
+    const timer=setTimeout(()=>{child.kill();reject(Error('本地操作超时，请检查运行日志'));},action==='update-prepare'?180000:['account','accounts','connect'].includes(action)?110000:action==='notification-watches'?45000:25000);
     child.stdout.setEncoding('utf8');child.stdout.on('data',data=>{output+=data;});
     child.stderr.setEncoding('utf8');child.stderr.on('data',data=>{error+=data;});
     child.on('error',err=>{clearTimeout(timer);reject(Error('无法启动网关运行时：'+err.message));});

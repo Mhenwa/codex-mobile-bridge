@@ -1,0 +1,43 @@
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: deploy/connect/Dockerfile
+    image: mhenwa-connect:local
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # Host 18787 produced an observed bind conflict; reserve it for the old return path.
+    ports: ["127.0.0.1:18790:18787"]
+    volumes:
+      - ${CONNECT_DATA:?set CONNECT_DATA}:/data
+      - ${CONNECT_RPC_SECRET_FILE:?set CONNECT_RPC_SECRET_FILE}:/run/secrets/eligibility:ro
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    command:
+      - python
+      - -m
+      - connect.relay
+      - --public-origin
+      - ${CONNECT_PUBLIC_ORIGIN:-https://codex.mhenwa.cc}
+      - --data-dir
+      - /data
+      - --eligibility-url
+      - ${CONNECT_ELIGIBILITY_URL:?set CONNECT_ELIGIBILITY_URL}
+      - --eligibility-secret-file
+      - /run/secrets/eligibility
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18787"
+      - --max-online-devices
+      - "8"
+      - --max-body-mib
+      - "2"
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options: {max-size: "2m", max-file: "2"}

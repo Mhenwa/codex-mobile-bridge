@@ -2,7 +2,9 @@
 // Release metadata is authenticated independently of macOS/Windows code signing.
 const fs=require('node:fs/promises'),path=require('node:path');
 const {createHash,verify}=require('node:crypto');
-const REPO='try2love/codex-mobile-bridge';
+// Fork builds must never silently replace Connect with the upstream personal
+// edition. Both release discovery and GitHub asset paths are pinned here.
+const REPO='Mhenwa/codex-mobile-bridge';
 const RELEASES=`https://api.github.com/repos/${REPO}/releases?per_page=100`;
 const MAX_PACKAGE=1024*1024*1024;
 function version(value){
@@ -97,4 +99,4 @@ class Updater{
     finally{if(staging)await fs.rm(staging,{recursive:true,force:true});}
   }
 }
-module.exports={Updater,version,compare,manifest,assetName,allowedUrl,releaseUrl,RELEASES,transfer};
+module.exports={Updater,version,compare,manifest,assetName,allowedUrl,releaseUrl,REPO,RELEASES,transfer};

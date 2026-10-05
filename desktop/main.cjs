@@ -42,7 +42,7 @@ function updateManaged(){
 }
 function worker(action,payload){
   if(action==='snapshot'&&updateQuitting)return Promise.resolve({...lastSnapshot,update:updater.status()});
-  const writes=['save','start','stop','devices','notification-watches'].includes(action);
+  const writes=['save','start','stop','devices','notification-watches','connect'].includes(action);
   if(writes&&updater?.busy)return Promise.reject(Error('正在更新应用，请稍候。'));
   if(writes)workerWrites++;
   if(action==='snapshot'&&snapshotPending)return snapshotPending;
@@ -145,6 +145,13 @@ function register(){
     try{return await pairingImage(grant);}
     catch(error){await worker('pairing',{action:'revoke',id:grant.id});throw error;}
   });
+  ipcMain.handle('bridge:connect',async(event,payload)=>{
+    authorize(event);
+    const grant=await worker('connect',payload);
+    // Pairing URLs are one-use bearer claims, rendered locally and never sent
+    // to third-party QR services, logs or operating-system URL handlers.
+    return payload?.action==='pair'?pairingImage(grant):grant;
+  });
   ipcMain.handle('bridge:export-deployment',async(event,payload)=>{
     authorize(event);
     const result=await dialog.showSaveDialog(window,{defaultPath:'Codex-deployment.zip',filters:[{name:payload?.language==='en'?'Deployment ZIP':'ZIP 部署包',extensions:['zip']}]});
@@ -177,10 +184,10 @@ function register(){
   });
   ipcMain.handle('bridge:open',async(event,target)=>{
     authorize(event);
-    if(target==='releases')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge/releases');
-    if(target==='project-home')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge');
-    if(target==='project-issues')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge/issues');
-    if(target==='project-pulls')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge/pulls');
+    if(target==='releases')return shell.openExternal('https://github.com/Mhenwa/codex-mobile-bridge/releases');
+    if(target==='project-home')return shell.openExternal('https://github.com/Mhenwa/codex-mobile-bridge');
+    if(target==='project-issues')return shell.openExternal('https://github.com/Mhenwa/codex-mobile-bridge/issues');
+    if(target==='project-pulls')return shell.openExternal('https://github.com/Mhenwa/codex-mobile-bridge/pulls');
     if(target==='credentials')return shell.openPath(path.join(dataDir,'首次登录.txt'));
     if(target==='data')return shell.openPath(dataDir);
     if(target==='cloudflare-help')return shell.openExternal('https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/');

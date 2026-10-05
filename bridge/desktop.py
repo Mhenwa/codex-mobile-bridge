@@ -33,6 +33,32 @@ class Desktop:
             credentials.chmod(0o600)
         return read_json(self.config_path, {})
 
+    def connect(self, value):
+        """Local-only opt-in registration; never return a model/device secret."""
+        if not isinstance(value, dict):
+            raise ValueError('Connect 操作格式错误')
+        if value.get('action') == 'register' and value.get('consent') is not True:
+            raise ValueError('开启前需要明确同意发送所选中转站 Key 验证资格')
+        from .connect import ConnectController
+        preferences = self.preferences()
+        effective = None
+        if value.get('action') in ('discover', 'register'):
+            # Ask the installed runtime for the resolved global configuration,
+            # rather than scanning every inactive provider definition.
+            from .account import AccountRPC, AccountError
+            from .catalog import Catalog
+            runtime = preferences.get('codexBin') or Catalog.find_runtime()
+            if runtime:
+                try:
+                    with AccountRPC(Path(preferences['codexHome']).expanduser(), runtime) as rpc:
+                        effective = rpc.request('config/read', {'includeLayers': False}).get('config', {})
+                except AccountError:
+                    raise ValueError('无法确认 Codex 当前生效配置，请检查桌面端状态后重试') from None
+        controller = ConnectController(self.data_dir, preferences['codexHome'], effective_config=effective)
+        if value.get('action', 'status') == 'status':
+            return controller.status(gateway_running=self.status()['running'])
+        return controller.control(value)
+
     def preferences(self):
         name = 'cloudflared.exe' if os.name == 'nt' else 'cloudflared'
         executable = self.data_dir/'bin'/name

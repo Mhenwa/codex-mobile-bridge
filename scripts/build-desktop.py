@@ -19,6 +19,12 @@ command.extend(['--add-data', certifi.where()+':bridge'])
 certificate_package = distribution('certifi')
 license_file = next(p for p in certificate_package.files if p.name == 'LICENSE')
 command.extend(['--add-data', str(certificate_package.locate_file(license_file))+':licenses/certifi'])
+# The optional connector is imported lazily so stdlib-only personal mode remains
+# supported. Explicitly collect its async runtime and TOML fallback when freezing.
+command.extend(['--hidden-import', 'bridge.connect', '--hidden-import', 'connect.protocol',
+                '--hidden-import', 'connect.discovery', '--collect-all', 'aiohttp'])
+if sys.version_info < (3, 11):
+    command.extend(['--hidden-import', 'tomli'])
 # The SSH adapter intentionally injects these source modules into remote Python.
 for name in ('store.py', 'catalog.py', 'create.py', 'account_models.py', 'tls.py'):
     command.extend(['--add-data', str(root/'bridge'/name)+':bridge'])

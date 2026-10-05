@@ -1,3 +1,5 @@
 # Build-time only; packaged users do not need Python installed.
 pyinstaller==6.20.0
 certifi==2026.7.22
+# Optional Connect is bundled in the desktop app, not required for personal source mode.
+-r requirements-connect.txt

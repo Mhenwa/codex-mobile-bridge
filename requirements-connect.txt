@@ -1,0 +1,3 @@
+# Optional platform mode only (Python >=3.10). Personal mode remains stdlib-only.
+aiohttp==3.14.3
+tomli>=2.2.1,<3; python_version < "3.11"

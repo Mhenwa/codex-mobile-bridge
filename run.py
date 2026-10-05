@@ -157,6 +157,7 @@ def main(connections=None):
     tunnel = None
     tunnel_thread = None
     ssh_tunnels = []
+    connect_companion = None
     def notification_urls():
         if not gateway_ready(args.port, server.instance_id):
             return []
@@ -219,6 +220,18 @@ def main(connections=None):
             tunnel_thread.start()
         notifications.start()
         address_notifications.start()
+        # Connect is opt-in. Normal standalone mode imports no optional network
+        # dependency and retains its existing authentication/listening behavior.
+        connect_path = args.config.parent / 'connect.json'
+        if connect_path.is_file():
+            from bridge.connect import enabled, start_companion, private_json
+            try:
+                if enabled(args.config.parent):
+                    connect_companion = start_companion(args.config.parent, server)
+            except (OSError, ValueError, KeyError):
+                # An invalid optional registration must not break LAN mode.
+                private_json(args.config.parent / 'connect-status.json', {'state': 'unavailable'})
+                print('Mhenwa Connect 未启动，请在桌面端检查注册；本地网关仍可使用。', flush=True)
         control.start(server.shutdown, server.pairing.control, server.instance_id, server.auth, bridge.account.control, server.notifications.control, bridge.accounts.control)
         for listener in servers[1:]:
             thread = threading.Thread(target=listener.serve_forever, kwargs={'poll_interval': 0.5}, daemon=True)
@@ -228,6 +241,9 @@ def main(connections=None):
     except KeyboardInterrupt:
         pass
     finally:
+        if connect_companion:
+            from bridge.connect import stop_companion
+            stop_companion(connect_companion)
         for listener, thread in listener_threads:
             listener.shutdown()
             thread.join()

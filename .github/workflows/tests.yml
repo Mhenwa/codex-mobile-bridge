@@ -23,7 +23,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -B -m unittest discover -s tests -v
+      - if: matrix.python != '3.9'
+        run: python -m pip install -r requirements-connect.txt
+      - if: matrix.python != '3.9'
+        run: python -B -m unittest discover -s tests -v
+      - name: Original stdlib-only personal mode on Python 3.9
+        if: matrix.python == '3.9'
+        run: python -B -c "import sys,unittest,pathlib;sys.path.insert(0,'tests');names=[p.stem for p in pathlib.Path('tests').glob('test_*.py') if not p.name.startswith('test_connect_')];sys.exit(not unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromNames(names)).wasSuccessful())"
 
   desktop-tests:
     runs-on: ubuntu-latest
@@ -35,4 +41,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:desktop
+      - run: node --test tests/connect-pairing-ui.test.cjs tests/connect-ui.test.cjs
       - run: npm run test:updater
