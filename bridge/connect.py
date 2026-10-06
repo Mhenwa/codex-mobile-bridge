@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 DEFAULT_RELAY = 'https://codex.mhenwa.cc'
+CONNECT_USER_AGENT = 'MhenwaConnect/1.3.3'
 MAX_CONTROL_RESPONSE = 256 * 1024
 
 
@@ -142,7 +143,7 @@ class ConnectController:
         # _config is an internal captured identity used ONLY for revocation after
         # the local gate is already closed. No desktop payload can populate it.
         cfg = read_config(self.directory) if _config is None else _config
-        headers = {'Content-Type': 'application/json'}
+        headers = {'Content-Type': 'application/json', 'User-Agent': CONNECT_USER_AGENT}
         if device:
             if not cfg.get('enabled') or not isinstance(cfg.get('deviceToken'), str):
                 raise ValueError('请先注册并开启 Connect')
@@ -163,12 +164,25 @@ class ConnectController:
                     raise ValueError('Connect 响应格式错误')
                 return result
         except HTTPError as exc:
-            # Never echo upstream payloads: they could contain model keys.
             messages = {401: 'Connect 凭据无效，请关闭后重新注册',
-                        403: '中转站账号没有 Connect 资格或授权已撤销',
+                        403: 'Connect 请求被入口或前置网络拒绝，请检查网络代理或联系服务管理员',
                         409: '配对已处理或设备状态变化，请刷新',
                         429: '操作过于频繁，请稍后重试'}
-            raise ConnectError(messages.get(exc.code, 'Connect 服务暂不可用'), exc.code) from None
+            message = messages.get(exc.code, 'Connect 服务暂不可用')
+            try:
+                # Only recognize a bounded, known Relay error. CDN/proxy 403s
+                # are not qualification decisions; never echo response text.
+                content_type = (exc.headers or {}).get('Content-Type', '').split(';', 1)[0].strip().lower()
+                if exc.code == 403 and content_type == 'application/json':
+                    raw = exc.read(MAX_CONTROL_RESPONSE + 1)
+                    body = json.loads(raw) if len(raw) <= MAX_CONTROL_RESPONSE else None
+                    if isinstance(body, dict) and body.get('error') == 'model credential is not eligible for this service':
+                        message = '所选中转站 Key 未通过 Connect 资格验证，请检查 Key 和账号状态'
+            except (OSError, ValueError):
+                pass
+            finally:
+                exc.close()
+            raise ConnectError(message, exc.code) from None
         except (URLError, OSError, json.JSONDecodeError):
             raise ValueError('无法连接 Connect 服务，请检查网络') from None
 
@@ -378,7 +392,8 @@ class Connector:
                 try:
                     ws_url = self.origin.replace('https://', 'wss://', 1).replace('http://', 'ws://', 1)
                     async with client.ws_connect(ws_url + '/connect/device/ws',
-                                                 headers={'Authorization': 'Bearer ' + self.config['deviceToken']},
+                                                 headers={'Authorization': 'Bearer ' + self.config['deviceToken'],
+                                                          'User-Agent': CONNECT_USER_AGENT},
                                                  heartbeat=20, max_msg_size=MAX_FRAME) as ws:
                         self.status('online')
                         delay = 1

@@ -7,6 +7,8 @@ import socket
 import tempfile
 import threading
 import unittest
+from email.message import Message
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -16,7 +18,7 @@ import aiohttp
 from aiohttp import web
 
 from bridge.connect import (ConnectController, ConnectError, Connector, NoRedirect, enabled,
-                            private_json, read_config, relay_origin,
+                            MAX_CONTROL_RESPONSE, private_json, read_config, relay_origin,
                             start_companion, stop_companion)
 from bridge.httpd import GatewayServer
 
@@ -194,6 +196,72 @@ class ControllerTests(unittest.TestCase):
                 self.controller.request('POST', '/connect/register', {'apiKey': KEY}, device=False)
         self.assertNotIn(KEY, str(exc.exception))
 
+    def test_registration_and_device_commands_send_explicit_client_user_agent(self):
+        with patch('connect.discovery.select_key', return_value=KEY), \
+                patch('bridge.connect.build_opener') as opener:
+            response = opener.return_value.open.return_value.__enter__.return_value
+            response.read.return_value = json.dumps({'deviceId': DEVICE_ID, 'deviceToken': DEVICE}).encode()
+            self.controller.control({'action': 'register', 'consent': True,
+                                     'provider': 'fixture', 'deviceName': 'Fixture'})
+            registration = opener.return_value.open.call_args.args[0]
+            self.assertEqual(registration.get_header('User-agent'), 'MhenwaConnect/1.3.3')
+            self.assertIsNone(registration.get_header('Authorization'))
+            self.assertEqual(json.loads(registration.data)['apiKey'], KEY)
+
+            response.read.return_value = b'{"phones": []}'
+            self.controller.control({'action': 'phones'})
+            device = opener.return_value.open.call_args.args[0]
+            self.assertEqual(device.get_header('User-agent'), 'MhenwaConnect/1.3.3')
+            self.assertEqual(device.get_header('Authorization'), 'Bearer ' + DEVICE)
+            self.assertEqual(device.full_url, 'https://codex.mhenwa.cc/connect/device/phones')
+            self.assertIsNone(device.data)
+            self.assertNotIn(KEY, str(device.headers))
+
+    def forbidden_response(self, body, content_type):
+        headers = Message()
+        headers['Content-Type'] = content_type
+        return HTTPError('https://codex.mhenwa.cc/connect/register', 403,
+                         KEY, headers, BytesIO(body))
+
+    def test_known_json_eligibility_denial_is_bounded_and_sanitized(self):
+        body = json.dumps({'error': 'model credential is not eligible for this service',
+                           'apiKey': KEY, 'deviceToken': DEVICE}).encode()
+        response = self.forbidden_response(body, 'application/json; charset=utf-8')
+        with patch('bridge.connect.build_opener') as opener, \
+                patch.object(response, 'read', wraps=response.read) as read:
+            opener.return_value.open.side_effect = response
+            with self.assertRaises(ConnectError) as exc:
+                self.controller.request('POST', '/connect/register', {'apiKey': KEY}, device=False)
+        self.assertEqual(exc.exception.status, 403)
+        self.assertIn('资格', str(exc.exception))
+        self.assertNotIn(KEY, str(exc.exception))
+        self.assertNotIn(DEVICE, str(exc.exception))
+        read.assert_called_once_with(MAX_CONTROL_RESPONSE + 1)
+
+    def test_front_network_and_unknown_forbidden_responses_are_not_eligibility_denials(self):
+        known = b'{"error":"model credential is not eligible for this service"}'
+        cases = [
+            ('text/html', ('<html>Access denied ' + KEY + ' ' + DEVICE + '</html>').encode()),
+            ('text/plain', ('error code: 403 ' + KEY + ' ' + DEVICE).encode()),
+            ('text/plain', known),
+            ('application/json', json.dumps({'error': KEY, 'deviceToken': DEVICE}).encode()),
+            ('application/json', ('invalid-json ' + KEY + ' ' + DEVICE).encode()),
+            ('application/json', json.dumps([KEY, DEVICE]).encode()),
+            ('application/json', known + b' ' * MAX_CONTROL_RESPONSE),
+        ]
+        for content_type, body in cases:
+            with self.subTest(content_type=content_type, size=len(body)):
+                response = self.forbidden_response(body, content_type)
+                with patch('bridge.connect.build_opener') as opener:
+                    opener.return_value.open.side_effect = response
+                    with self.assertRaises(ConnectError) as exc:
+                        self.controller.request('POST', '/connect/register', {'apiKey': KEY}, device=False)
+                message = str(exc.exception)
+                self.assertEqual(exc.exception.status, 403)
+                self.assertNotIn('资格', message)
+                self.assertNotIn(KEY, message)
+                self.assertNotIn(DEVICE, message)
+
 
 class ForwardTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -290,6 +358,7 @@ class ForwardTests(unittest.IsolatedAsyncioTestCase):
         async def device(request):
             try:
                 self.assertEqual(request.headers.get('Authorization'), 'Bearer ' + DEVICE)
+                self.assertEqual(request.headers.get('User-Agent'), 'MhenwaConnect/1.3.3')
                 self.assertNotIn(KEY, str(request.headers))
                 ws = web.WebSocketResponse()
                 await ws.prepare(request)
