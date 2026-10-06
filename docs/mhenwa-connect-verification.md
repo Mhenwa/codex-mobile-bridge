@@ -49,6 +49,7 @@ CI 保留 Python 3.9 的个人标准库模式；Connect 需要 Python 3.10+，�
 - 原 codex HTTPS 上游未连通，基线实际 502；新配对页面实际 200，未授权 `/api/sessions` 实际 401。
 - `totp.mhenwa.cc` 与 `draw.mhenwa.cc` 实际仍 200，配置哈希分别仍为 `5e244968e84273d73f542bcef71527efa8564b6e99a868e59c0fc05541b8e52b` 与 `d93f9945ac09c7aa6d10e9d5a934a9aa694290cf0632860116b3bc0e73ab66c0`。
 - 中继空闲约 28 MiB，限制 256 MiB；这不等于已完成压力测试。
+- 2026-10-06 观测模式调整：Relay compose 将 `--max-inflight 8` 与 `--max-online-devices 8` 均改为 `0`（0 表示不限制），并移除 `mem_limit: 256m` 和 `cpus: 1.0`。转发请求的全局/单设备/单手机并发 admission cap 关闭；单帧 2 MiB、请求/响应超时、聚合正文缓冲预算、WebSocket 心跳以及注册入口的保守限流仍保留，后续根据实际资源曲线再决定是否恢复上限。
 
 首次 Docker 启动宿主 18787 观察到地址占用退出错误；随后的只读检查未确认存活占用进程。已改为 18790，不停止任何既有隧道。首次容器刚启动时 curl 收到连接重置，稍后独立复查为 200。首次资格 Nginx reload 后立即 curl 曾落到旧 worker 返回 200，后续独立 HTTPS 本地/公网检查均为 401。这些过渡结果不当作成功验证覆盖。
 

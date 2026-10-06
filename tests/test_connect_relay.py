@@ -53,6 +53,27 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(safe_content_type("application/json; charset=utf-8"), "application/json; charset=utf-8")
 
 
+class RelayConfigurationTests(unittest.TestCase):
+    def test_zero_resource_caps_normalize_to_unlimited_without_removing_body_budget(self):
+        async def eligibility(_key):
+            return {"eligible": True, "user_id": 1, "token_id": 1}
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app("http://localhost", directory, eligibility,
+                             max_online_devices=0, max_inflight_per_device=0,
+                             max_inflight_per_phone=0, max_total_inflight=0)
+            state = app[STATE]
+            try:
+                self.assertIsNone(state.max_online)
+                self.assertIsNone(state.max_device)
+                self.assertIsNone(state.max_phone)
+                self.assertIsNone(state.max_total)
+                self.assertEqual(state.max_body, MAX_BODY)
+                self.assertEqual(state.max_buffered, MAX_BODY)
+            finally:
+                state.registry.close()
+
+
 class RelayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -72,7 +93,8 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
 
         self.app = create_app("http://localhost", self.directory.name, eligibility,
             eligibility_introspect=introspect, qualification_cache_ttl=0,
-            monitor_interval=0.05, request_timeout=0.2, max_inflight_per_phone=2)
+            monitor_interval=0.05, request_timeout=0.2, max_inflight_per_phone=2,
+            max_online_devices=0)
         self.state = self.app[STATE]
         self.client = TestClient(TestServer(self.app), headers={"Host": "localhost"}, cookie_jar=DummyCookieJar())
         await self.client.start_server()
@@ -423,6 +445,25 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*requests)
         response = await self.client.get("/api/sessions", headers=self.phone_headers(phone))
         self.assertEqual(response.status, 401)
+
+    async def test_unlimited_inflight_mode_forwards_parallel_requests(self):
+        """Zero/None request caps must not reject otherwise valid concurrent work."""
+        # The fixture keeps a finite phone cap for the legacy admission test above.
+        # Exercise the observation-mode state explicitly, including all three caps.
+        self.state.max_device = self.state.max_phone = self.state.max_total = None
+        device = await self.register()
+        phone = await self.pair(device)
+        socket = await self.websocket(device)
+        requests = [asyncio.create_task(self.client.get(
+            "/api/sessions", headers=self.phone_headers(phone))) for _ in range(3)]
+        frames = [await socket.receive_json() for _ in requests]
+        self.assertEqual(len({frame["id"] for frame in frames}), 3)
+        for frame in frames:
+            await self.response(socket, frame, {"ok": True})
+        results = await asyncio.gather(*requests)
+        self.assertEqual([result.status for result in results], [200, 200, 200])
+        self.assertEqual((self.state.request_bytes, self.state.response_bytes,
+                          self.state.total_inflight), (0, 0, 0))
 
     async def test_landing_original_app_static_and_device_limit(self):
         response = await self.client.get("/")

@@ -25,7 +25,6 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 DEFAULT_RELAY = 'https://codex.mhenwa.cc'
 MAX_CONTROL_RESPONSE = 256 * 1024
-MAX_INFLIGHT = 8
 
 
 class ConnectError(ValueError):
@@ -403,8 +402,7 @@ class Connector:
                                 await ws.close(code=1008)
                                 break
                             identifier = message.get('id') if isinstance(message, dict) else None
-                            if (not isinstance(identifier, str) or identifier in seen
-                                    or len(tasks) >= MAX_INFLIGHT):
+                            if not isinstance(identifier, str) or identifier in seen:
                                 await ws.send_json({'type': 'response', 'id': identifier, 'status': 429,
                                                     'contentType': 'application/json',
                                                     'body': base64.b64encode(b'{"error":"request rejected; not executed"}').decode()})

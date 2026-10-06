@@ -3,7 +3,7 @@
 This contract binds the parallel implementation. Tests and deployment evidence must be appended to the plan, not treated as a replacement goal. Model credentials must never be printed or committed.
 
 ## Components
-- `connect/relay.py`, `connect/registry.py`, `connect/protocol.py`: aiohttp central relay, SQLite metadata; fixed public origin; loopback HTTP only for tests/deployment behind TLS.
+- `connect/relay.py`, `connect/registry.py`, `connect/protocol.py`: aiohttp central relay, SQLite metadata; fixed public origin; loopback HTTP only for tests/deployment behind TLS. Observation deployments may set online-device and in-flight request limits to `0` (unlimited), while body-size, aggregate-buffer, and timeout protections remain.
 - `connect/eligibility.py`: trusted New API qualification adapter, also aiohttp service entry point. Validates keys without inference, returns stable backend user/token IDs and eligibility; never trusts submitted user IDs.
 - `bridge/connect.py`: optional local connector embedded in `run.py`, preserving existing standalone behavior. Uses fixed loopback `GatewayServer` with an internal authenticated session; no raw IPC or arbitrary HTTP targets.
 - Desktop UI exposes local-only `connect` action through `desktop.py` and Electron IPC. Mobile landing/assets are in `connect/web/`; approved users reuse the existing `web/` app.
@@ -34,7 +34,7 @@ JSON request `{type:'request',id:<random>,method:'GET'|'POST',path:<allowlisted-
 JSON response `{type:'response',id,status,body:<base64>,contentType}`. Strip credentials and Set-Cookie; never forward cookies from local server to mobile.
 `connect/protocol.py` exports `MAX_BODY` (20MiB), `MAX_FRAME` (base64 body plus bounded JSON), `validate_request(method,path,body_size,content_type)`, raising ValueError for denied actions/unsafe paths.
 Original `/api/sessions`/projects/activity/thread history/poll/timeline/send/stop/respond/reconnect/settings/queue/message-action/rename/goal/files/uploads permitted with exact shapes. SSE `events` denied, relay advertises poll. No management/credential/reset/notification-provider/account-switch endpoints. Per-thread notifications may be permitted but only original current-thread policy. Existing submission IDs are preserved; relay never automatically retries writes after disconnect/timeout.
-Both relay AND local connector enforce allowlist and size. A disconnected/timeout write returns an explicit unknown outcome, not an automatic replay. Bounded in-flight requests, heartbeat and capped reconnect backoff.
+Both relay AND local connector enforce allowlist and size. A disconnected/timeout write returns an explicit unknown outcome, not an automatic replay. Explicit in-flight caps remain available for protected deployments, but observation mode sets them to unlimited; body-size/aggregate-buffer limits, heartbeat and capped reconnect backoff remain.
 
 ## Connector/controller actions
 `Desktop.connect(value)` is LOCAL ONLY. Supported actions: `status`, `discover`, `register` (explicit consent + provider choice; calls eligibility registration), `pair`, `pairings`, `approve`, `phones`, `revoke-phone`, `disable`.

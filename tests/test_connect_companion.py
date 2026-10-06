@@ -329,6 +329,72 @@ class ForwardTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(task, return_exceptions=True)
             await runner.cleanup()
 
+    async def test_real_websocket_allows_more_than_eight_parallel_requests(self):
+        """Observation mode no longer applies the legacy connector task cap."""
+        done = asyncio.Event()
+        results = []
+        failures = []
+        entered = threading.Event()
+        release = threading.Event()
+
+        def blocked_list(**_kwargs):
+            # Hold every gateway operation open until all nine frames have
+            # entered the local gateway.  With the old eight-task cap the
+            # ninth frame would be rejected before this event could fire.
+            if self.bridge.list.call_count >= 9:
+                entered.set()
+            release.wait(3)
+            return [{'id': THREAD}]
+
+        self.bridge.list.side_effect = blocked_list
+
+        async def device(request):
+            try:
+                self.assertEqual(request.headers.get('Authorization'), 'Bearer ' + DEVICE)
+                ws = web.WebSocketResponse()
+                await ws.prepare(request)
+                for index in range(9):
+                    message = self.message()
+                    message['id'] = 'fixture-request-' + str(index)
+                    await ws.send_json(message)
+                for _ in range(9):
+                    results.append(await ws.receive_json(timeout=3))
+                private_json(self.directory / 'connect.json', {'enabled': False})
+                await ws.receive(timeout=3)
+                await ws.close()
+                return ws
+            except Exception as exc:
+                failures.append(exc)
+                return web.Response(status=500)
+            finally:
+                done.set()
+
+        app = web.Application()
+        app.router.add_get('/connect/device/ws', device)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '127.0.0.1', 0)
+        await site.start()
+        origin = 'http://127.0.0.1:' + str(site._server.sockets[0].getsockname()[1])
+        private_json(self.directory / 'connect.json',
+                     {'enabled': True, 'relayUrl': origin, 'deviceId': DEVICE_ID, 'deviceToken': DEVICE})
+        companion = Connector(self.directory, self.server, allow_loopback=True)
+        task = asyncio.create_task(companion.run_async())
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait, 3))
+            release.set()
+            await asyncio.wait_for(done.wait(), 6)
+            await asyncio.wait_for(task, 3)
+            self.assertEqual(failures, [])
+            self.assertEqual(len(results), 9)
+            self.assertEqual([row['status'] for row in results], [200] * 9)
+            self.assertEqual(self.bridge.list.call_count, 9)
+        finally:
+            release.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            await runner.cleanup()
+
     async def test_full_real_relay_desktop_registration_pair_approval_write_and_phone_revoke(self):
         from connect.relay import create_app, COOKIE
         sock = socket.socket()

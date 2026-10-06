@@ -77,7 +77,7 @@ docker compose -p mhenwa-connect-relay -f deploy/connect/relay.compose.yml up -d
 
 ## 开放给用户前
 
-当前属于首版实现，生产 compose 明确限制**最多 8 个在线设备、单帧正文最多 2 MiB**；大附件/过大的历史响应会拒绝，不会静默转发。请求/响应正文预算及并发也有上限。注册/认领入口在当前反代后按保守共享来源限流，不宣称支持海量注册；扩容前需完善可信来源链和负载测试。后续用分块帧+全局预算扩展大附件和在线设备数，不能只提高 WebSocket parser 的每连接上限。
+当前观测模式不设置在线设备数上限、不设置转发请求并发上限，也不在 Relay compose 中设置容器 `mem_limit` 或 `cpus`；实际可承载量由宿主机、Docker、反代和 Python 进程资源共同决定。仍保留**单帧正文最多 2 MiB**、请求/响应超时、聚合正文缓冲预算和 WebSocket 心跳；大附件/过大的历史响应会拒绝，不会静默转发。注册/认领入口仍按保守共享来源限流，并保留注册并发保护，不宣称支持海量注册。需要恢复保护上限时，可通过 `--max-online-devices N` 和 `--max-inflight N` 重新设置；`0` 表示不限制。
 
 自动更新已锁定 `Mhenwa/codex-mobile-bridge`，不会回到上游个人版。正式 Release 仍需你自己的 Ed25519 发布签名私钥及对应客户端公钥；当前未签名 Windows 本地测试包不是正式 Release，不要把继承的上游签名公钥当作你已经拥有的签名体系。
 

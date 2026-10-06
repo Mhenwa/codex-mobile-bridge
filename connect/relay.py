@@ -61,10 +61,10 @@ async def _call(function, *args):
 
 class Relay:
     def __init__(self, public_origin, registry, eligibility, web_dir, landing_dir,
-                 *, request_timeout=30, max_inflight_per_device=16,
-                 max_inflight_per_phone=4, max_total_inflight=8, max_buffered_body_bytes=MAX_BODY, eligibility_introspect=None,
+                 *, request_timeout=30, max_inflight_per_device=0,
+                 max_inflight_per_phone=0, max_total_inflight=0, max_buffered_body_bytes=MAX_BODY, eligibility_introspect=None,
                  qualification_cache_ttl=30, monitor_interval=5, max_body_bytes=MAX_BODY,
-                 max_online_devices=8):
+                 max_online_devices=0):
         origin = urlsplit(public_origin)
         if (origin.scheme not in {"http", "https"} or not origin.netloc or origin.username
                 or origin.password or origin.query or origin.fragment or origin.path not in {"", "/"}):
@@ -78,12 +78,23 @@ class Relay:
         self.introspect = eligibility_introspect or getattr(eligibility, "introspect", None)
         self.web_dir, self.landing_dir = Path(web_dir), Path(landing_dir)
         self.timeout = request_timeout
-        self.max_device, self.max_phone = max_inflight_per_device, max_inflight_per_phone
-        self.max_total, self.total_inflight = max_total_inflight, 0
+        limits = (max_inflight_per_device, max_inflight_per_phone, max_total_inflight)
+        if any(value is not None and value < 0 for value in limits):
+            raise ValueError("invalid request concurrency limit")
+        self.max_device = None if max_inflight_per_device in (None, 0) else max_inflight_per_device
+        self.max_phone = None if max_inflight_per_phone in (None, 0) else max_inflight_per_phone
+        self.max_total = None if max_total_inflight in (None, 0) else max_total_inflight
+        self.total_inflight = 0
         self.max_buffered, self.request_bytes, self.response_bytes = max_buffered_body_bytes, 0, 0
-        if not 0 < max_body_bytes <= MAX_BODY or max_online_devices < 1:
+        if (not 0 < max_body_bytes <= MAX_BODY or
+                max_online_devices is not None and max_online_devices < 0):
             raise ValueError("invalid body or online-device limit")
-        self.max_body, self.max_online = max_body_bytes, max_online_devices
+        # A zero value explicitly disables the online-device admission cap for
+        # deployments that want to observe real resource usage before choosing
+        # a capacity limit.  Body-size, aggregate-buffer and timeout protections
+        # remain enforced even when admission caps are disabled.
+        self.max_body = max_body_bytes
+        self.max_online = None if max_online_devices in (None, 0) else max_online_devices
         self.max_frame = ((self.max_body + 2) // 3) * 4 + 16384
         self.registrations = 0
         self.cache_ttl, self.monitor_interval = qualification_cache_ttl, monitor_interval
@@ -237,7 +248,8 @@ class Relay:
         device = await self.device_auth(request)
         if device["id"] in self.connecting:
             raise web.HTTPServiceUnavailable()
-        if device["id"] not in self.devices and len(set(self.devices) | self.connecting) >= self.max_online:
+        if (device["id"] not in self.devices and self.max_online is not None and
+                len(set(self.devices) | self.connecting) >= self.max_online):
             raise web.HTTPServiceUnavailable()
         self.connecting.add(device["id"])
         ws = web.WebSocketResponse(heartbeat=15, max_msg_size=self.max_frame, compress=False)
@@ -388,8 +400,9 @@ class Relay:
             raise ValueError("explicit request size required")
         if reservation > self.max_body:
             raise web.HTTPRequestEntityTooLarge(max_size=self.max_body, actual_size=reservation)
-        if (self.device_inflight[device["id"]] >= self.max_device or
-                self.phone_inflight[phone["id"]] >= self.max_phone or self.total_inflight >= self.max_total or
+        if ((self.max_device is not None and self.device_inflight[device["id"]] >= self.max_device) or
+                (self.max_phone is not None and self.phone_inflight[phone["id"]] >= self.max_phone) or
+                (self.max_total is not None and self.total_inflight >= self.max_total) or
                 self.request_bytes + reservation > self.max_buffered):
             raise web.HTTPTooManyRequests(text='{"error":"too many in-flight requests"}', content_type="application/json")
         identifier = secrets.token_urlsafe(24)
@@ -507,10 +520,10 @@ async def protections(request, handler):
 
 def create_app(public_origin, data_dir, eligibility, web_dir=None, landing_dir=None, *,
                registry=None, request_timeout=30, pair_ttl=300, phone_ttl=2592000,
-               max_devices_per_owner=5, max_inflight_per_device=16,
-               max_inflight_per_phone=4, max_total_inflight=8, max_buffered_body_bytes=MAX_BODY, eligibility_introspect=None,
+               max_devices_per_owner=5, max_inflight_per_device=0,
+               max_inflight_per_phone=0, max_total_inflight=0, max_buffered_body_bytes=MAX_BODY, eligibility_introspect=None,
                eligibility_recheck=None, qualification_cache_ttl=30, monitor_interval=5,
-               max_body_bytes=MAX_BODY, max_online_devices=8):
+               max_body_bytes=MAX_BODY, max_online_devices=0):
     """Build a testable relay; qualification provider is configuration, not input."""
     root = Path(__file__).resolve().parent.parent
     registry = registry or Registry(Path(data_dir) / "connect.sqlite3", pair_ttl=pair_ttl,
@@ -566,16 +579,19 @@ def main(argv=None):
     parser.add_argument("--eligibility-secret-file", required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18787)
-    parser.add_argument("--max-inflight", type=int, default=8)
+    parser.add_argument("--max-inflight", type=int, default=0,
+                        help="maximum total in-flight requests; 0 means unlimited")
     parser.add_argument("--max-buffered-body-mib", type=int, default=20)
     parser.add_argument("--max-body-mib", type=int, default=2,
                         help="staging body cap; protocol maximum is 20 MiB")
-    parser.add_argument("--max-online-devices", type=int, default=8)
+    parser.add_argument("--max-online-devices", type=int, default=0,
+                        help="maximum simultaneously connected computers; 0 means unlimited")
     args = parser.parse_args(argv)
     shared_secret = Path(args.eligibility_secret_file).read_text(encoding="utf-8").strip()
     provider = EligibilityClient(args.eligibility_url, shared_secret)
-    if args.max_inflight < 1 or args.max_buffered_body_mib < 1 or not 0 < args.max_body_mib <= 20 or args.max_online_devices < 1:
-        parser.error("resource limits must be positive")
+    if (args.max_inflight < 0 or args.max_buffered_body_mib < 1 or
+            not 0 < args.max_body_mib <= 20 or args.max_online_devices < 0):
+        parser.error("resource limits must be non-negative, with zero meaning unlimited")
     app = create_app(args.public_origin, args.data_dir, provider,
                      max_total_inflight=args.max_inflight,
                      max_buffered_body_bytes=args.max_buffered_body_mib * 1024 * 1024,
