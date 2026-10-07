@@ -66,7 +66,7 @@ async function main(){
   for(const key of ['CMB_PYTHON','PYTHONPATH','PYTHONHOME','ELECTRON_RUN_AS_NODE'])delete env[key];
   const worker=(action,payload)=>runWorker({executable:runtime,dataDir:data},action,payload);
   const settings=await worker('snapshot');
-  Object.assign(settings.preferences,{port,lan:false,tunnel:false,connections:[],autoStart:false,codexHome:data,ipcPath:path.join(data,'missing.sock')});
+  Object.assign(settings.preferences,{port,lan:false,localAccess:true,tunnel:false,connections:[],autoStart:false,codexHome:data,ipcPath:path.join(data,'missing.sock')});
   settings.auth.password='synthetic-linux-smoke-password';await worker('save',settings);
   let child,exited,client,errors='',launchError;
   async function launch(){
