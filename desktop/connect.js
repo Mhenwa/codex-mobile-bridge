@@ -18,6 +18,7 @@
     current=value;
     $('connect-state').textContent=value.message;
     $('connect-device').textContent=value.registered?`${value.deviceName} · ${value.deviceId}`:'尚未注册电脑';
+    $('connect-device').classList.toggle('connect-device-registered',Boolean(value.registered&&value.enabled&&value.state!=='revoked'));
     $('connect-register').disabled=busy||value.enabled;
     $('connect-discover').disabled=busy||value.enabled;
     $('connect-pair').disabled=busy||value.state!=='online';
