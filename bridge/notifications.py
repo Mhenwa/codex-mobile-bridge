@@ -172,6 +172,19 @@ def channels(config):
             (('ntfy', config['enabled']), ('bark', config['barkEnabled']), ('pushplus', config.get('pushplusEnabled', False))) if enabled}
 
 
+def connect_destination(data_dir):
+    # A normal gateway without Connect never loads companion/optional modules.
+    try:
+        config = read_json(Path(data_dir)/'connect.json', {})
+        if not isinstance(config, dict) or config.get('enabled') is not True:
+            return None
+        from .connect import notification_identity, read_config
+        return notification_identity(read_config(data_dir))
+    except (OSError, ValueError):
+        # A damaged optional companion configuration must not disable ntfy/Bark.
+        return None
+
+
 class Notifications:
     def __init__(self, bridge, data_dir, origins=lambda: [], public_url=lambda: ''):
         self.bridge, self.data_dir, self.origins = bridge, Path(data_dir), origins
@@ -200,6 +213,7 @@ class Notifications:
         self.target_signature = None
         self.wakeup = getattr(bridge, 'notification_event', threading.Event())
         self.worker = None
+        self.connect_budget = 0
 
     def start(self):
         self.worker = threading.Thread(target=self._run, daemon=True)
@@ -233,7 +247,11 @@ class Notifications:
                 write_json(self.data_dir/'notification-policies.json', policies)
             return {key: policies[key] for key in ('requests', 'completion')}
 
-    def _effective(self, row, policies=None, legacy_rows=None):
+    def _effective(self, row, policies=None, legacy_rows=None, target=''):
+        if target.startswith('connect:'):
+            # Each phone owns its Connect preferences on the relay. Local Bark,
+            # ntfy and PushPlus controls must not suppress that independent stream.
+            return {**row, 'notifyOnRequest': True, 'notifyOnCompletion': True}
         policies = policies or self.policies()
         key = row['host'] + '|' + row['id']
         overrides = policies.get('chats', {}).get(key, {})
@@ -263,17 +281,18 @@ class Notifications:
                     'notifyOnRequest': row['notifyOnRequest'], 'notifyOnCompletion': row['notifyOnCompletion'],
                     'requests': row['choices']['requests'], 'completion': row['choices']['completion']}
 
-    def _selected(self):
+    def _selected(self, connect=False):
         policies = self.policies()
         legacy_rows = self.watches()
         rows = {(r['host'], r['id']): r for r in legacy_rows}
-        if policies['requests'] or policies['completion']:
+        if connect or policies['requests'] or policies['completion']:
             rows.update(self.candidates)
         for key in policies.get('chats', {}):
             host, identifier = key.rsplit('|', 1)
             rows.setdefault((host, identifier), {'id': identifier, 'host': host})
         effective = [self._effective(row, policies, legacy_rows) for row in rows.values()]
-        return [row for row in effective if row['notifyOnRequest'] or row['notifyOnCompletion']]
+        return [row for row in effective if row['notifyOnRequest'] or row['notifyOnCompletion']
+                or (connect and (row['host'], row['id']) in self.candidates)]
 
     def watch(self, thread_id, host, enabled=None, notify_on_completion=None, *, existing_only=False):
         uuid.UUID(thread_id)
@@ -346,7 +365,8 @@ class Notifications:
         raise ValueError('通知监控操作格式不正确')
 
     def _clear_completion(self, host, thread_id):
-        self.completions = {k: v for k, v in self.completions.items() if json.loads(k)[:2] != [host, thread_id]}
+        self.completions = {k: v for k, v in self.completions.items()
+                            if json.loads(k)[:2] != [host, thread_id] or json.loads(k)[-1].startswith('connect:')}
 
     @staticmethod
     def _completion_key(host, thread_id, target):
@@ -361,11 +381,12 @@ class Notifications:
     def _completion_pending(self, row, turns, target):
         key = self._completion_key(row['host'], row['id'], target)
         with self.lock:
-            if not self._effective(row)['notifyOnCompletion']:
+            if not self._effective(row, target=target)['notifyOnCompletion']:
                 return []
             previous = self.completions.get(key)
             current = self._completion_baseline(turns)
-            current['title'] = row.get('title') or (previous or {}).get('title') or '聊天'
+            if not target.startswith('connect:'):
+                current['title'] = row.get('title') or (previous or {}).get('title') or '聊天'
             if previous is not None:
                 # Only turns after the last live boundary (or observed running) are new.
                 # Older pages loaded into a snapshot must never become completion alerts.
@@ -404,9 +425,11 @@ class Notifications:
         pending = [k for k in keys if not self.ledger.get(k, {}).get('delivered') and now >= self.ledger.get(k, {}).get('next', 0)]
         if not pending:
             return False
-        current = self._effective(row)
+        current = self._effective(row, target=target)
         if not current['notifyOnCompletion' if completed else 'notifyOnRequest']:
             return False
+        if channel == 'connect':
+            return self._send_connect(row, target, pending, completed, now)
         heading = 'Codex 运行已完成' if completed else 'Codex 需要你的确认'
         body = f'有 {len(pending)} 次运行已完成，请打开聊天查看。' if completed else f'有 {len(pending)} 项请求等待处理，请打开聊天查看。'
         if config['includeTitle']:
@@ -424,9 +447,48 @@ class Notifications:
             self._status(channel, error='发送失败，将在提醒仍开启时重试完成通知；待确认通知仅在请求仍待处理时重试。请检查服务地址、认证和网络。')
         return True
 
+    def _send_connect(self, row, target, pending, completed, now):
+        from .connect import ConnectController
+        changed = False
+        for key in pending:
+            if self.closed.is_set() or connect_destination(self.data_dir) != target:
+                break
+            prior = self.ledger.get(key, {})
+            created_at = prior.get('createdAt', int(now))
+            if now >= created_at + (3600 if completed else 300):
+                self.ledger[key] = {'delivered': True, 'expired': True,
+                                    'time': now, 'createdAt': created_at}
+                changed = True
+                continue
+            if not self.connect_budget:
+                break
+            self.connect_budget -= 1
+            value = {'id': key.rsplit(':', 1)[-1], 'kind': 'completion' if completed else 'request',
+                     'threadId': row['id'], 'host': row['host'], 'count': 1, 'createdAt': created_at}
+            try:
+                if not ConnectController(self.data_dir).publish_notification(value, target):
+                    break
+                self.ledger[key] = {'delivered': True, 'time': now, 'createdAt': created_at}
+                self._status('connect', lastSent=now, error='')
+            except Exception:
+                attempts = prior.get('attempts', 0) + 1
+                self.ledger[key] = {'delivered': False, 'attempts': attempts,
+                                    'next': now + min(300, 5 * 2 ** min(attempts, 6)),
+                                    'time': now, 'createdAt': created_at}
+                self._status('connect', error='Connect 通知发送失败，将在设备仍启用时重试。')
+                # One offline endpoint must not hold the shared notification scan
+                # in up to 32 sequential timeouts or delay the legacy channels.
+                self.connect_budget = 0
+            changed = True
+        return changed
+
     def scan(self):
         config = settings(self.data_dir)
         targets = channels(config)
+        connect = connect_destination(self.data_dir)
+        if connect:
+            targets['connect'] = connect
+        self.connect_budget = 32
         signature = tuple(sorted(targets.items()))
         if signature != self.target_signature:
             self.candidates.update({key: {'host': key[0], 'id': key[1]} for key in self.dormant})
@@ -445,13 +507,13 @@ class Notifications:
                 self.candidates[key] = row
                 self.dormant.discard(key)
         with self.lock:
-            watches = [r for r in self._selected() if (r['host'], r['id']) not in self.dormant] if targets else []
+            watches = [r for r in self._selected(connect=bool(connect)) if (r['host'], r['id']) not in self.dormant] if targets else []
             changed = False
             policies, legacy_rows = self.policies(), self.watches()
             for key, record in list(self.completions.items()):
                 host, identifier, target = json.loads(key)
                 row = {'host': host, 'id': identifier}
-                if target not in targets.values() or not self._effective(row, policies, legacy_rows)['notifyOnCompletion']:
+                if target not in targets.values() or not self._effective(row, policies, legacy_rows, target=target)['notifyOnCompletion']:
                     del self.completions[key]
                     write_json(self.data_dir/'notification-completions.json', self.completions)
                     continue
@@ -500,7 +562,9 @@ class Notifications:
                         requests = pending_requests(session.state)
                         title = session.state.get('title') or '聊天'
                         turns = [{'turnId': t.get('turnId'), 'status': t.get('status')} for t in ordered_turns(session.state)]
-                    completed_keys = {channel: self._completion_pending({**current, 'title': title}, turns, target) if current.get('notifyOnCompletion') else [] for channel, target in targets.items()}
+                    completed_keys = {channel: self._completion_pending({**current, 'title': title}, turns, target)
+                                      if self._effective(current, target=target)['notifyOnCompletion'] else []
+                                      for channel, target in targets.items()}
                 for channel, target in targets.items():
                     with self.lock:
                         for completed, keys in ((False, [self._delivery_key(row, r['id'], target=target) for r in requests]), (True, completed_keys[channel])):

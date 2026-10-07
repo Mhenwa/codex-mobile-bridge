@@ -1,5 +1,6 @@
 """SQLite metadata registry. Only hashes of independent credentials are stored."""
 import hashlib
+import json
 import os
 import secrets
 import sqlite3
@@ -45,6 +46,23 @@ class Registry:
                 id TEXT PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(id),
                 name TEXT NOT NULL, secret_hash TEXT UNIQUE NOT NULL, csrf TEXT NOT NULL,
                 created REAL NOT NULL, expires REAL NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS push_subscriptions(
+                phone_id TEXT PRIMARY KEY REFERENCES phones(id), endpoint_hash TEXT UNIQUE NOT NULL,
+                endpoint TEXT NOT NULL, keys_json TEXT NOT NULL,
+                requests INTEGER NOT NULL, completion INTEGER NOT NULL,
+                created REAL NOT NULL, updated REAL NOT NULL, expires REAL);
+            CREATE TABLE IF NOT EXISTS push_events(
+                device_id TEXT NOT NULL REFERENCES devices(id), event_id TEXT NOT NULL,
+                created REAL NOT NULL, PRIMARY KEY(device_id,event_id));
+            CREATE TABLE IF NOT EXISTS push_preferences(
+                phone_id TEXT PRIMARY KEY REFERENCES phones(id),
+                requests INTEGER NOT NULL DEFAULT 1, completion INTEGER NOT NULL DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS push_outbox(
+                id INTEGER PRIMARY KEY, phone_id TEXT NOT NULL REFERENCES phones(id),
+                event_id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
+                created REAL NOT NULL, expires REAL NOT NULL, next_attempt REAL NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0, UNIQUE(phone_id,event_id));
+            CREATE INDEX IF NOT EXISTS push_outbox_due ON push_outbox(next_attempt);
         """)
         self.db.commit()
         if os.name != "nt":
@@ -152,12 +170,19 @@ class Registry:
             cursor = self.db.execute("UPDATE phones SET revoked=1 WHERE id=? AND device_id=?", (identifier, device_id))
             if cursor.rowcount != 1:
                 raise PermissionError("phone does not belong to device")
+            self.db.execute("DELETE FROM push_outbox WHERE phone_id=?", (identifier,))
+            self.db.execute("DELETE FROM push_subscriptions WHERE phone_id=?", (identifier,))
+            self.db.execute("DELETE FROM push_preferences WHERE phone_id=?", (identifier,))
 
     def revoke_device(self, device_id):
         with self.db:
             self.db.execute("UPDATE devices SET revoked=1 WHERE id=?", (device_id,))
             self.db.execute("UPDATE phones SET revoked=1 WHERE device_id=?", (device_id,))
             self.db.execute("UPDATE pairings SET state='denied' WHERE device_id=?", (device_id,))
+            self.db.execute("DELETE FROM push_outbox WHERE phone_id IN (SELECT id FROM phones WHERE device_id=?)", (device_id,))
+            self.db.execute("DELETE FROM push_subscriptions WHERE phone_id IN (SELECT id FROM phones WHERE device_id=?)", (device_id,))
+            self.db.execute("DELETE FROM push_preferences WHERE phone_id IN (SELECT id FROM phones WHERE device_id=?)", (device_id,))
+            self.db.execute("DELETE FROM push_events WHERE device_id=?", (device_id,))
 
     def revoke_backend(self, owner_id=None, token_id=None):
         """Trusted operator hook; not exposed by any public API."""
@@ -174,3 +199,112 @@ class Registry:
         for identifier in identifiers:
             self.revoke_device(identifier)
         return identifiers
+
+    def get_phone(self, identifier):
+        row = self.db.execute("SELECT p.* FROM phones p JOIN devices d ON d.id=p.device_id WHERE p.id=? AND p.revoked=0 AND p.expires>? AND d.revoked=0", (identifier, self.clock())).fetchone()
+        return dict(row) if row else None
+
+    def push_preferences(self, phone_id):
+        row = self.db.execute("SELECT requests,completion FROM push_preferences WHERE phone_id=?", (phone_id,)).fetchone()
+        return {"requests": bool(row["requests"]) if row else True,
+                "completion": bool(row["completion"]) if row else True}
+
+    def set_push_preferences(self, phone_id, events):
+        with self.db:
+            self.db.execute("INSERT INTO push_preferences(phone_id,requests,completion) VALUES(?,?,?) ON CONFLICT(phone_id) DO UPDATE SET requests=excluded.requests,completion=excluded.completion",
+                            (phone_id, events["requests"], events["completion"]))
+            self.db.execute("UPDATE push_subscriptions SET requests=?,completion=?,updated=? WHERE phone_id=?",
+                            (events["requests"], events["completion"], self.clock(), phone_id))
+            for kind, enabled in (("request", events["requests"]), ("completion", events["completion"])):
+                if not enabled:
+                    self.db.execute("DELETE FROM push_outbox WHERE phone_id=? AND kind=?", (phone_id, kind))
+
+    def push_subscription(self, phone_id):
+        row = self.db.execute("SELECT * FROM push_subscriptions WHERE phone_id=? AND (expires IS NULL OR expires>?)", (phone_id, self.clock())).fetchone()
+        return dict(row) if row else None
+
+    def subscribe_push(self, phone_id, subscription, events):
+        now, endpoint = self.clock(), subscription["endpoint"]
+        endpoint_hash = hashlib.sha256(endpoint.encode()).hexdigest()
+        expires = subscription.get("expirationTime")
+        expires = expires / 1000 if expires is not None else None
+        with self.db:
+            self._prune_push(now)
+            owner = self.db.execute("SELECT phone_id FROM push_subscriptions WHERE endpoint_hash=?", (endpoint_hash,)).fetchone()
+            if owner and owner[0] != phone_id:
+                raise ValueError("push subscription already belongs to another phone")
+            # Resubscribing must never deliver events that were queued for old keys.
+            self.db.execute("DELETE FROM push_outbox WHERE phone_id=?", (phone_id,))
+            self.db.execute("INSERT INTO push_subscriptions(phone_id,endpoint_hash,endpoint,keys_json,requests,completion,created,updated,expires) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(phone_id) DO UPDATE SET endpoint_hash=excluded.endpoint_hash,endpoint=excluded.endpoint,keys_json=excluded.keys_json,requests=excluded.requests,completion=excluded.completion,updated=excluded.updated,expires=excluded.expires",
+                            (phone_id, endpoint_hash, endpoint, json.dumps(subscription["keys"], separators=(",", ":")), events["requests"], events["completion"], now, now, expires))
+            self.db.execute("INSERT INTO push_preferences(phone_id,requests,completion) VALUES(?,?,?) ON CONFLICT(phone_id) DO UPDATE SET requests=excluded.requests,completion=excluded.completion",
+                            (phone_id, events["requests"], events["completion"]))
+
+    def unsubscribe_push(self, phone_id):
+        with self.db:
+            self.db.execute("DELETE FROM push_outbox WHERE phone_id=?", (phone_id,))
+            self.db.execute("DELETE FROM push_subscriptions WHERE phone_id=?", (phone_id,))
+
+    def _prune_push(self, now):
+        self.db.execute("DELETE FROM push_outbox WHERE expires<=? OR phone_id IN (SELECT p.id FROM phones p JOIN devices d ON d.id=p.device_id WHERE p.revoked=1 OR p.expires<=? OR d.revoked=1)", (now, now))
+        self.db.execute("DELETE FROM push_outbox WHERE phone_id IN (SELECT phone_id FROM push_subscriptions WHERE expires IS NOT NULL AND expires<=?)", (now,))
+        self.db.execute("DELETE FROM push_subscriptions WHERE (expires IS NOT NULL AND expires<=?) OR phone_id IN (SELECT p.id FROM phones p JOIN devices d ON d.id=p.device_id WHERE p.revoked=1 OR p.expires<=? OR d.revoked=1)", (now, now))
+        self.db.execute("DELETE FROM push_events WHERE created<?", (now - 7 * 86400,))
+
+    def enqueue_push(self, device_id, event, payload):
+        """Durable device-scoped deduplication and bounded per-phone delivery queue."""
+        now = self.clock()
+        with self.db:
+            self._prune_push(now)
+            cursor = self.db.execute("INSERT OR IGNORE INTO push_events(device_id,event_id,created) VALUES(?,?,?)", (device_id, event["id"], now))
+            if not cursor.rowcount:
+                return 0
+            self.db.execute("DELETE FROM push_events WHERE device_id=? AND event_id NOT IN (SELECT event_id FROM push_events WHERE device_id=? ORDER BY created DESC,rowid DESC LIMIT 8192)", (device_id, device_id))
+            ttl = 300 if event["kind"] == "request" else 3600
+            expires = min(now + ttl, event["createdAt"] + ttl)
+            if expires <= now:
+                return 1
+            column = "requests" if event["kind"] == "request" else "completion"
+            phones = self.db.execute(f"SELECT s.phone_id FROM push_subscriptions s JOIN phones p ON p.id=s.phone_id JOIN devices d ON d.id=p.device_id WHERE p.device_id=? AND p.revoked=0 AND p.expires>? AND d.revoked=0 AND s.{column}=1 AND (s.expires IS NULL OR s.expires>?)", (device_id, now, now)).fetchall()
+            for phone in phones:
+                self._insert_push(phone[0], event["id"], event["kind"], payload, now, expires)
+        return 1
+
+    def _insert_push(self, phone_id, event_id, kind, payload, now, expires):
+        self.db.execute("INSERT OR IGNORE INTO push_outbox(phone_id,event_id,kind,payload,created,expires,next_attempt) VALUES(?,?,?,?,?,?,?)", (phone_id, event_id, kind, json.dumps(payload, separators=(",", ":"), ensure_ascii=False), now, expires, now))
+        self.db.execute("DELETE FROM push_outbox WHERE phone_id=? AND id NOT IN (SELECT id FROM push_outbox WHERE phone_id=? ORDER BY id DESC LIMIT 256)", (phone_id, phone_id))
+        self.db.execute("DELETE FROM push_outbox WHERE id NOT IN (SELECT id FROM push_outbox ORDER BY id DESC LIMIT 8192)")
+
+    def enqueue_push_test(self, phone_id, payload):
+        now = self.clock()
+        with self.db:
+            self._prune_push(now)
+            self._insert_push(phone_id, "test:" + secret(), "test", payload, now, now + 300)
+
+    def due_push(self, limit=32):
+        now = self.clock()
+        with self.db:
+            self._prune_push(now)
+        rows = self.db.execute("SELECT o.*,s.endpoint,s.endpoint_hash,s.keys_json,p.device_id FROM push_outbox o JOIN push_subscriptions s ON s.phone_id=o.phone_id JOIN phones p ON p.id=o.phone_id WHERE o.next_attempt<=? ORDER BY o.id LIMIT ?", (now, limit)).fetchall()
+        return [dict(row) for row in rows]
+
+    def push_pending(self, item):
+        # SQLite may reuse a deleted INTEGER PRIMARY KEY. Match event identity
+        # as well, so unsubscribe/resubscribe cannot resurrect a stale snapshot.
+        return self.db.execute("SELECT 1 FROM push_outbox WHERE id=? AND phone_id=? AND event_id=? AND kind=? AND expires>?", (item["id"], item["phone_id"], item["event_id"], item["kind"], self.clock())).fetchone() is not None
+
+    def finish_push(self, item, *, retry=False):
+        identifier = item["id"]
+        with self.db:
+            owner = self.db.execute("SELECT phone_id,event_id FROM push_outbox WHERE id=?", (identifier,)).fetchone()
+            if not owner or owner["phone_id"] != item["phone_id"] or owner["event_id"] != item["event_id"]:
+                return
+            if retry:
+                row = self.db.execute("SELECT attempts,expires FROM push_outbox WHERE id=?", (identifier,)).fetchone()
+                attempts = row[0] + 1 if row else 3
+                now = self.clock()
+                delay = 30 if attempts == 1 else 120
+                if row and attempts < 3 and now + delay < row[1]:
+                    self.db.execute("UPDATE push_outbox SET attempts=?,next_attempt=? WHERE id=?", (attempts, now + delay, identifier))
+                    return
+            self.db.execute("DELETE FROM push_outbox WHERE id=?", (identifier,))

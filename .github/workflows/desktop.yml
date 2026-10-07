@@ -3,7 +3,7 @@ on:
   workflow_call:
   workflow_dispatch:
   push:
-    branches: [main, feature/desktop-ntfy, codex/windows-desktop-app, integration/desktop-cross-platform, codex/ubuntu-support, codex/mhenwa-connect]
+    branches: [main, feature/desktop-ntfy, codex/windows-desktop-app, integration/desktop-cross-platform, codex/ubuntu-support, codex/mhenwa-connect, codex/mhenwa-connect-web-push]
     paths: ['desktop/**', 'desktop.py', 'bridge/**', 'connect/**', 'web/**', 'run.py', 'scripts/**', 'tests/**', 'package*.json', 'requirements*.txt', '.github/workflows/desktop.yml']
 permissions:
   contents: read
@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: python -m pip install -r requirements-desktop.txt
+      - run: python -m pip install -r requirements-desktop.txt -r requirements-relay.txt
       - run: npm ci
       - run: python -B -m unittest discover -s tests -v
       - run: npm run test:desktop
@@ -61,6 +61,9 @@ jobs:
       - name: Verify packaged Windows HTTPS trust
         if: runner.os == 'Windows'
         run: python scripts/verify-https.py "dist/desktop/win-unpacked/resources/gateway/codex-mobile-gateway.exe"
+      - name: Verify packaged background Web Push events
+        if: runner.os == 'Windows'
+        run: python scripts/smoke-web-push-frozen.py "dist/desktop/win-unpacked/resources/gateway/codex-mobile-gateway.exe"
       - if: runner.os == 'macOS'
         run: npm run test:pairing
         env:
@@ -107,7 +110,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-0 libnss3 libgbm1 libasound2 libxss1 libsecret-1-0 libfuse2 xvfb xauth dbus-x11 xdg-utils iproute2
-      - run: python -m pip install -r requirements-desktop.txt
+      - run: python -m pip install -r requirements-desktop.txt -r requirements-relay.txt
       - run: npm ci
       - run: python -B -m unittest discover -s tests -v
       - run: npm run test:desktop

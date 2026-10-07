@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - if: matrix.python != '3.9'
-        run: python -m pip install -r requirements-connect.txt
+        run: python -m pip install -r requirements-relay.txt
       - if: matrix.python != '3.9'
         run: python -B -m unittest discover -s tests -v
       - name: Original stdlib-only personal mode on Python 3.9
@@ -41,5 +41,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:desktop
-      - run: node --test tests/connect-pairing-ui.test.cjs tests/connect-ui.test.cjs
+      - run: node --test tests/connect-pairing-ui.test.cjs tests/connect-ui.test.cjs tests/network-connect-layout.test.cjs tests/web-push.test.cjs
       - run: npm run test:updater

@@ -7,11 +7,17 @@ if(location.hash.startsWith('#connect_pair='))location.replace('/connect/'+locat
 document.addEventListener('DOMContentLoaded',()=>{
   for(const id of ['accounts-button','account-button','pushplus-settings',
                    'settings-accounts','settings-pushplus','appearance-accounts','appearance-pushplus',
-                   'notification-requests','notification-completions']){
+                   'notification-requests','notification-completions','notify-button','notify-dialog']){
     const node=document.getElementById(id);
     if(!node)continue;
     const container=node.closest('label');
     (container||node).hidden=true;
     node.disabled=true;
   }
+  // Connect notifications belong to this phone. The old gateway-wide settings
+  // would change other users' delivery channels and cannot configure Web Push.
+  const legacy=document.getElementById('notification-requests');
+  const section=legacy&&legacy.closest('fieldset');
+  if(section)section.hidden=true;
+  if(window.MhenwaWebPush)window.MhenwaWebPush.mount();
 });

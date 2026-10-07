@@ -21,6 +21,8 @@ from aiohttp import WSMsgType, web
 
 from .protocol import MAX_BODY, safe_content_type, validate_request
 from .registry import Registry
+from .push import (EVENT_FIELDS, PushService, notification_payload,
+                   validate_events, validate_notification, validate_subscription)
 
 COOKIE = "mhenwa_connect_phone"
 STATE = web.AppKey("connect_state", object)
@@ -341,9 +343,50 @@ class Relay:
             self.registry.revoke_device(device["id"])
             await self.close_device(device["id"])
             result = {"ok": True}
+        elif request.method == "POST" and tail == "notifications":
+            body = await self.json(request, EVENT_FIELDS, EVENT_FIELDS)
+            event = validate_notification(body, self.registry.clock())
+            if not self.push.available:
+                raise web.HTTPServiceUnavailable(text='{"error":"web push is unavailable"}', content_type="application/json")
+            accepted = self.registry.enqueue_push(device["id"], event, notification_payload(event))
+            self.push.wake.set()
+            result = {"ok": True, "accepted": accepted}
         else:
             raise web.HTTPNotFound()
         return web.json_response(result)
+
+    async def push_status(self, request):
+        phone, _ = await self.phone_auth(request)
+        return web.json_response(self.push.status(phone["id"]))
+
+    async def push_action(self, request):
+        phone, _ = await self.phone_auth(request, write=True)
+        action = request.match_info["action"]
+        if action == "unsubscribe":
+            await self.json(request, set())
+            self.registry.unsubscribe_push(phone["id"])
+        elif action == "preferences":
+            body = await self.json(request, {"events"}, {"events"})
+            self.registry.set_push_preferences(phone["id"], validate_events(body["events"]))
+        elif action == "subscribe":
+            body = await self.json(request, {"subscription", "events"}, {"subscription", "events"})
+            if not self.push.available:
+                raise web.HTTPServiceUnavailable(text='{"error":"web push is unavailable"}', content_type="application/json")
+            subscription = validate_subscription(body["subscription"], self.registry.clock())
+            self.registry.subscribe_push(phone["id"], subscription, validate_events(body["events"]))
+        elif action == "test":
+            await self.json(request, set())
+            if not self.push.available:
+                raise web.HTTPServiceUnavailable(text='{"error":"web push is unavailable"}', content_type="application/json")
+            if not self.registry.push_subscription(phone["id"]):
+                raise web.HTTPConflict(text='{"error":"enable web push before sending a test"}', content_type="application/json")
+            if not self.rates.allow("push-test:" + phone["id"], 1, 10):
+                raise web.HTTPTooManyRequests()
+            self.registry.enqueue_push_test(phone["id"], {"title": "Codex · 通知测试", "body": "网页关闭后，也可以收到这里的通知。", "url": "/", "tag": "codex-push-test"})
+            self.push.wake.set()
+        else:
+            raise web.HTTPNotFound()
+        return web.json_response({"ok": True, **self.push.status(phone["id"])})
 
     async def pair_claim(self, request):
         self.origin_check(request)
@@ -475,13 +518,14 @@ class Relay:
             if phone and path == "/":
                 await self.phone_auth(request)
                 html = (self.web_dir / "index.html").read_text(encoding="utf-8")
-                if (self.landing_dir / "platform.js").is_file():
-                    html = html.replace("<script ", '<script src="/connect/platform.js" defer></script><script ', 1)
+                injected = "".join(f'<script src="/connect/{script}" defer></script>' for script in ("platform.js", "push.js") if (self.landing_dir / script).is_file())
+                if injected:
+                    html = html.replace("<script ", injected + "<script ", 1)
                 if (self.landing_dir / "platform.css").is_file():
                     html = html.replace("</head>", '<link rel="stylesheet" href="/connect/platform.css"></head>')
                 return web.Response(text=html, content_type="text/html")
             file, content_type = self.landing_dir / "index.html", "text/html"
-        elif path in {"/connect/pair.js", "/connect/pair.css", "/connect/platform.js", "/connect/platform.css"}:
+        elif path in {"/connect/pair.js", "/connect/pair.css", "/connect/platform.js", "/connect/platform.css", "/connect/push.js", "/connect/push-sw.js"}:
             file = self.landing_dir / path.rsplit("/", 1)[1]
             content_type = "text/javascript" if path.endswith(".js") else "text/css"
         elif path in STATIC:
@@ -494,7 +538,10 @@ class Relay:
             file, content_type = self.web_dir / "vendor" / "katex" / "fonts" / match[1], "font/" + match[2]
         if not file.is_file():
             raise web.HTTPNotFound()
-        return web.Response(body=file.read_bytes(), headers={"Content-Type": content_type})
+        headers = {"Content-Type": content_type}
+        if path == "/connect/push-sw.js":
+            headers["Service-Worker-Allowed"] = "/"
+        return web.Response(body=file.read_bytes(), headers=headers)
 
 
 @web.middleware
@@ -523,7 +570,8 @@ def create_app(public_origin, data_dir, eligibility, web_dir=None, landing_dir=N
                max_devices_per_owner=5, max_inflight_per_device=0,
                max_inflight_per_phone=0, max_total_inflight=0, max_buffered_body_bytes=MAX_BODY, eligibility_introspect=None,
                eligibility_recheck=None, qualification_cache_ttl=30, monitor_interval=5,
-               max_body_bytes=MAX_BODY, max_online_devices=0):
+               max_body_bytes=MAX_BODY, max_online_devices=0, push_sender=None,
+               vapid_subject=None, vapid_key_file=None, push_auto_send=True, push_interval=5):
     """Build a testable relay; qualification provider is configuration, not input."""
     root = Path(__file__).resolve().parent.parent
     registry = registry or Registry(Path(data_dir) / "connect.sqlite3", pair_ttl=pair_ttl,
@@ -535,6 +583,8 @@ def create_app(public_origin, data_dir, eligibility, web_dir=None, landing_dir=N
                   eligibility_introspect=eligibility_introspect or eligibility_recheck,
                   qualification_cache_ttl=qualification_cache_ttl, monitor_interval=monitor_interval,
                   max_body_bytes=max_body_bytes, max_online_devices=max_online_devices)
+    state.push = PushService(registry, state.origin, vapid_key_file or Path(data_dir) / "vapid-private.pem",
+                             subject=vapid_subject, sender=push_sender, interval=push_interval)
     app = web.Application(middlewares=[protections], client_max_size=MAX_BODY)
     app[STATE] = state
     app.router.add_post("/connect/register", state.register)
@@ -544,6 +594,8 @@ def create_app(public_origin, data_dir, eligibility, web_dir=None, landing_dir=N
     app.router.add_post("/connect/pair/status", state.pair_status)
     app.router.add_get("/connect/me", state.me)
     app.router.add_post("/connect/logout", state.logout)
+    app.router.add_get("/connect/push", state.push_status)
+    app.router.add_post("/connect/push/{action}", state.push_action)
     app.router.add_get("/api/auth", state.me)
     app.router.add_post("/api/logout", state.logout)
     app.router.add_route("*", "/api/{tail:.*}", state.forward)
@@ -554,12 +606,15 @@ def create_app(public_origin, data_dir, eligibility, web_dir=None, landing_dir=N
 
     async def startup(application):
         state.monitor_task = asyncio.create_task(state.monitor())
+        if push_auto_send and state.push.available:
+            state.push.task = asyncio.create_task(state.push.run(state.check_qualification))
 
     async def cleanup(application):
         state.monitor_task.cancel()
         await asyncio.gather(state.monitor_task, return_exceptions=True)
         for identifier in list(state.devices):
             await state.close_device(identifier)
+        await state.push.close()
         registry.close()
         close = getattr(eligibility, "close", None)
         if close:
@@ -577,6 +632,8 @@ def main(argv=None):
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--eligibility-url", required=True)
     parser.add_argument("--eligibility-secret-file", required=True)
+    parser.add_argument("--vapid-subject", help="VAPID contact HTTPS URL or mailto URI; defaults to public origin")
+    parser.add_argument("--vapid-key-file", help="persistent P-256 private key; defaults to data-dir/vapid-private.pem")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18787)
     parser.add_argument("--max-inflight", type=int, default=0,
@@ -596,7 +653,8 @@ def main(argv=None):
                      max_total_inflight=args.max_inflight,
                      max_buffered_body_bytes=args.max_buffered_body_mib * 1024 * 1024,
                      max_body_bytes=args.max_body_mib * 1024 * 1024,
-                     max_online_devices=args.max_online_devices)
+                     max_online_devices=args.max_online_devices,
+                     vapid_subject=args.vapid_subject, vapid_key_file=args.vapid_key_file)
     web.run_app(app, host=args.host, port=args.port, access_log=None)
 
 

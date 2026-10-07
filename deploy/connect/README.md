@@ -73,6 +73,12 @@ docker compose -p mhenwa-connect-relay -f deploy/connect/relay.compose.yml up -d
 
 ## 本机源码运行
 
+### 网页系统通知（Web Push）
+
+新版中继和新版电脑客户端一起支持关闭手机网页后的任务提醒。手机在已授权的网页“设置 → 手机网页系统通知”中订阅，分别选择待确认与运行完成；每部手机独立保存开关。iPhone/iPad 需 iOS/iPadOS 16.4+，先添加到主屏幕，再从图标打开并授权。Android 需浏览器支持 Web Push 并允许系统通知。
+
+中继 Docker 构建安装 `requirements-relay.txt`，持久 `/data/vapid-private.pem` 和 SQLite 订阅/发送队列。保留原数据卷与资格服务密钥，升级中继镜像和 Windows 客户端即可，不需要修改 Nginx 或添加手机原生 App。详细使用、升级与验证见 [Web Push 文档](../../docs/web-push.md)。
+
 个人模式依然只需 Python 标准库。Connect 模式要求 Python 3.10+（建议 3.13），额外执行 `python -m pip install -r requirements-connect.txt`，然后通过桌面 Mhenwa Connect 页明确同意检测/注册，启动网关后生成配对二维码。现有上游 v1.3.3 安装包不包含这项二开；需要从本分支构建。客户端数据目录由原 Bridge 配置决定，不应把设备凭据放入工作仓库。
 
 ## 开放给用户前

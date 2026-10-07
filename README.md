@@ -4,7 +4,7 @@
 
 # Codex App 手机网关
 
-> **Mhenwa Connect 二开分支（内测）**：新增中转站资格验证、独立设备凭据、电脑批准手机配对和共享 HTTPS/WSS 中继。模型仍在用户电脑的 Codex 执行，不把 API Key 当远程控制密码。使用与双服务器部署见 [Mhenwa Connect 文档](deploy/connect/README.md)。下方原项目 v1.3.3 下载链接是上游个人版，**不包含本分支功能**；请勿用它替换二开安装。
+> **Mhenwa Connect 二开分支（内测）**：新增中转站资格验证、独立设备凭据、电脑批准手机配对和共享 HTTPS/WSS 中继。支持 [网页系统通知（Web Push）](docs/web-push.md)，手机授权后关闭网页也能接收待确认和完成提醒；需同时更新电脑客户端与中继。模型仍在用户电脑的 Codex 执行，不把 API Key 当远程控制密码。使用与双服务器部署见 [Mhenwa Connect 文档](deploy/connect/README.md)。下方原项目 v1.3.3 下载链接是上游个人版，**不包含本分支功能**；请勿用它替换二开安装。
 
 [简体中文](README.md) · [English](README_EN.md)
 

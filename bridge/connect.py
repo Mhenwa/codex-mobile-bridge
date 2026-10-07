@@ -8,6 +8,7 @@ import asyncio
 import base64
 import binascii
 import getpass
+import hashlib
 import json
 import os
 import random
@@ -18,6 +19,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -92,6 +94,21 @@ def enabled(data_dir):
     return read_config(data_dir).get('enabled') is True
 
 
+def notification_identity(config, relay_url=DEFAULT_RELAY):
+    """Bind delivery state to a registered device without retaining its secret."""
+    if (not isinstance(config, dict) or config.get('enabled') is not True
+            or config.get('relayUrl') != relay_url
+            or not isinstance(config.get('deviceId'), str)
+            or not re.fullmatch(r'[A-Za-z0-9_-]{8,128}', config['deviceId'])
+            or not isinstance(config.get('deviceToken'), str)
+            or not 20 <= len(config['deviceToken']) <= 512
+            or any(ord(c) < 33 or ord(c) > 126 for c in config['deviceToken'])):
+        return None
+    token_hash = hashlib.sha256(config['deviceToken'].encode()).hexdigest()
+    value = [relay_url, config['deviceId'], token_hash]
+    return 'connect:' + hashlib.sha256(json.dumps(value).encode()).hexdigest()
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
@@ -140,8 +157,8 @@ class ConnectController:
         return result
 
     def request(self, method, path, value=None, device=True, _config=None, _timeout=15):
-        # _config is an internal captured identity used ONLY for revocation after
-        # the local gate is already closed. No desktop payload can populate it.
+        # _config is an internal captured identity for revocation and notification
+        # delivery. No desktop payload can populate it.
         cfg = read_config(self.directory) if _config is None else _config
         headers = {'Content-Type': 'application/json', 'User-Agent': CONNECT_USER_AGENT}
         if device:
@@ -185,6 +202,36 @@ class ConnectController:
             raise ConnectError(message, exc.code) from None
         except (URLError, OSError, json.JSONDecodeError):
             raise ValueError('无法连接 Connect 服务，请检查网络') from None
+
+    def publish_notification(self, value, target):
+        """Send a content-free native event only while the captured device is active."""
+        fields = {'id', 'kind', 'threadId', 'host', 'count', 'createdAt'}
+        if (not isinstance(value, dict) or set(value) != fields
+                or not isinstance(value.get('id'), str)
+                or not re.fullmatch(r'[a-f0-9]{64}', value['id'])
+                or value.get('kind') not in ('request', 'completion')
+                or not isinstance(value.get('threadId'), str)
+                or not isinstance(value.get('host'), str)
+                or not 1 <= len(value['host']) <= 256
+                or any(not c.isprintable() or c.isspace() or c in '~/#|' for c in value['host'])
+                or type(value.get('count')) is not int or not 1 <= value['count'] <= 4096
+                or type(value.get('createdAt')) is not int or value['createdAt'] < 0):
+            raise ValueError('Connect 通知格式错误')
+        try:
+            uuid.UUID(value['threadId'])
+        except ValueError:
+            raise ValueError('Connect 通知聊天标识格式错误') from None
+        cfg = read_config(self.directory)
+        if notification_identity(cfg, self.relay_url) != target:
+            return False
+        result = self.request('POST', '/connect/device/notifications', value,
+                              _config=cfg, _timeout=8)
+        if (not isinstance(result, dict) or result.get('ok') is not True or type(result.get('accepted')) is not int
+                or not 0 <= result['accepted'] <= 4096):
+            raise ValueError('Connect 未接受通知')
+        # accepted=0 also covers relay deduplication and no eligible phone at this
+        # boundary. Persist acceptance so a later subscription cannot replay it.
+        return True
 
     def retry_revocations(self):
         """Best-effort cleanup, never authorize a disabled identity or expose it.

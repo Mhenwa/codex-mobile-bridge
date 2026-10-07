@@ -1,2 +1,7 @@
 /* Presentation preferences cannot re-enable desktop-only administration. */
-#accounts-button,#account-button,#pushplus-settings,#settings-accounts,#settings-pushplus{display:none!important}
+#accounts-button,#account-button,#pushplus-settings,#settings-accounts,#settings-pushplus,#notify-button,#notify-dialog{display:none!important}
+.connect-web-push[hidden]{display:none!important}
+.connect-web-push .connect-push-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.connect-web-push .connect-push-note{line-height:1.55;margin:8px 0}
+.connect-web-push .connect-push-status{line-height:1.55;margin:10px 0 0;overflow-wrap:anywhere}
+.connect-web-push .connect-push-status[data-error="true"]{color:var(--danger,#c84d48)}

@@ -1,0 +1,3 @@
+# Public Connect relay only. The desktop connector does not send browser pushes.
+-r requirements-connect.txt
+pywebpush==2.5.0
