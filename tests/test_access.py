@@ -97,6 +97,7 @@ class AccessTests(unittest.TestCase):
 
     def test_nas_requires_reachable_computer_address_and_generates_literal_config(self):
         value = self.value
+        value['preferences']['lan'] = True
         value['preferences']['connections'] = [{**access.DEFAULTS, 'id':'nas', 'name':'NAS', 'enabled':True, 'accessMode':'nas', 'publicUrl':'https://codex.example.com:8443', 'proxyUpstream':'http://192.168.2.30:8787'}]
         self.desktop.save(value)
         files = self.desktop.deployment({'id':'nas'})['files']
@@ -154,6 +155,7 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(self.desktop.preferences()['connections'][0]['id'], 'legacy-server')
         self.assertEqual(json.loads((self.directory/'desktop.json').read_text(encoding='utf-8')), legacy)
         value = self.server()
+        value['preferences']['lan'] = True
         value['preferences']['connections'] += [
             {**access.DEFAULTS,'id':'quick','name':'Temporary','accessMode':'quick','enabled':True},
             {**access.DEFAULTS,'id':'nas','name':'Home','accessMode':'nas','enabled':True,'publicUrl':'https://nas.example.com','proxyUpstream':'http://192.168.1.10:8787'}]

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from bridge.desktop import Desktop
-from bridge.notifications import settings
+from bridge.notifications import settings, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,6 +51,49 @@ class DesktopTests(unittest.TestCase):
         self.assertFalse(snapshot['notifications']['barkEnabled'])
         self.assertNotIn('hash', snapshot['auth'])
         self.assertTrue((self.directory/'首次登录.txt').is_file())
+
+    def test_fresh_install_disables_lan_and_local_browser_access(self):
+        with patch('run.addresses', return_value=['127.0.0.1', '192.168.1.7', '169.254.1.2', 'localhost']) as addresses:
+            snapshot = self.value()
+        self.assertFalse(snapshot['preferences']['lan'])
+        self.assertFalse(snapshot['preferences']['localAccess'])
+        self.assertFalse(self.desktop.config()['localAccess'])
+        self.assertEqual(snapshot['urls'], [])
+        self.assertNotIn('--lan', self.desktop.argv())
+        addresses.assert_not_called()
+
+    def test_missing_local_access_config_adopts_preferences_without_overriding_saved_value(self):
+        write_json(self.directory/'desktop.json', {'localAccess': True})
+        write_json(self.desktop.config_path, {'auth': {'mode': 'none'}, 'origins': []})
+        self.assertTrue(self.desktop.config()['localAccess'])
+        write_json(self.desktop.config_path, {'auth': {'mode': 'none'}, 'origins': [], 'localAccess': False})
+        self.assertFalse(self.desktop.config()['localAccess'])
+
+    def test_public_entry_is_only_address_with_default_local_access_disabled(self):
+        value = self.value()
+        value['preferences']['connections'] = [{
+            'id': 'server', 'name': 'Fixed HTTPS', 'enabled': True,
+            'accessMode': 'server', 'publicUrl': 'https://codex.mhenwa.cc',
+            'sshTarget': 'fixture-only', 'sshRemotePort': 18787,
+        }]
+        with patch('run.addresses', return_value=['127.0.0.1', '100.117.117.29', '169.254.199.137', 'localhost']):
+            snapshot = self.desktop.save(value)
+        self.assertEqual(snapshot['urls'], ['https://codex.mhenwa.cc/'])
+        self.assertFalse(self.desktop.config()['localAccess'])
+
+    def test_saved_explicit_local_and_lan_opt_ins_remain_enabled(self):
+        write_json(self.directory/'desktop.json', {'lan': True, 'localAccess': True,
+                                                   'lanAddresses': ['192.168.1.7']})
+        snapshot = self.value()
+        self.assertTrue(snapshot['preferences']['lan'])
+        self.assertTrue(snapshot['preferences']['localAccess'])
+        self.assertEqual(snapshot['urls'], ['http://127.0.0.1:8787/', 'http://192.168.1.7:8787/'])
+        self.assertIn('--lan', self.desktop.argv())
+        write_json(self.directory/'desktop.json', {'lan': False, 'localAccess': True})
+        self.assertEqual(self.desktop.snapshot()['urls'], ['http://127.0.0.1:8787/'])
+        write_json(self.directory/'desktop.json', {'lan': True, 'localAccess': False,
+                                                   'lanAddresses': ['192.168.1.7']})
+        self.assertEqual(self.desktop.snapshot()['urls'], ['http://192.168.1.7:8787/'])
 
     def test_save_roundtrip_and_secrets_are_not_returned(self):
         value = self.value()
@@ -127,7 +170,7 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(self.desktop.config(), before)
 
     def test_arguments_are_preserved_as_separate_values(self):
-        value = self.value();value['preferences'].update(ipcPath='pipe with spaces', codexBin='/path with spaces/codex', tunnel=False)
+        value = self.value();value['preferences'].update(ipcPath='pipe with spaces', codexBin='/path with spaces/codex', tunnel=False, lan=True)
         self.desktop.save(value)
         argv = self.desktop.argv()
         self.assertEqual(argv[argv.index('--port')+1], '8787')

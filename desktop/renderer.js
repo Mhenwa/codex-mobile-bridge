@@ -93,7 +93,7 @@ function render(value,watchRevision=watchPanel.revision){
     const p=value.preferences,n=value.notifications;
     for(const [id,key] of [['port','port'],['cloudflared','cloudflared'],['codex-home','codexHome'],['ipc-path','ipcPath'],['codex-bin','codexBin']])input(id,p[key]);
     $('auto-start').checked=p.autoStart;$('lan').checked=p.lan;
-    $('local-access').checked=p.localAccess!==false;input('lan-scope',p.lanAddresses==null?'all':'selected');
+    $('local-access').checked=p.localAccess===true;input('lan-scope',p.lanAddresses==null?'all':'selected');
     lanDraft=p.lanAddresses==null?(value.networkInterfaces||[]).map(row=>row.address):[...p.lanAddresses];savedLan=JSON.stringify(lanDraft);
     connectionDraft=JSON.parse(JSON.stringify(p.connections||[]));savedConnections=JSON.stringify(connectionDraft);renderConnections();
     const fixed=connectionDraft.filter(c=>c.enabled).map(c=>c.publicUrl);

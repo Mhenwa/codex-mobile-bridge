@@ -9,7 +9,7 @@
   "scripts": {
     "desktop": "electron .",
     "test:connect": "python -m unittest discover -s tests -p test_connect*.py && node --test tests/connect-pairing-ui.test.cjs tests/connect-ui.test.cjs tests/network-connect-layout.test.cjs",
-    "test:desktop": "node --test tests/accounts-ui.test.cjs tests/network.test.cjs tests/desktop.test.cjs tests/notifications-ui.test.cjs tests/account-ui.test.cjs tests/account-startup.test.cjs tests/presentation.test.cjs tests/modes-ui.test.cjs tests/watches-ui.test.cjs tests/attachments-activity.test.cjs tests/fast-mode-ui.test.cjs tests/message-actions-ui.test.cjs",
+    "test:desktop": "node --test tests/accounts-ui.test.cjs tests/network.test.cjs tests/desktop.test.cjs tests/pairing-links.test.cjs tests/notifications-ui.test.cjs tests/account-ui.test.cjs tests/account-startup.test.cjs tests/presentation.test.cjs tests/modes-ui.test.cjs tests/watches-ui.test.cjs tests/attachments-activity.test.cjs tests/fast-mode-ui.test.cjs tests/message-actions-ui.test.cjs",
     "test:windows-app": "node scripts/smoke-windows.cjs",
     "icons:desktop": "electron scripts/build-icons.cjs",
     "pack:desktop": "electron-builder --dir --publish never",

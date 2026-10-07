@@ -31,7 +31,13 @@ class Desktop:
             credentials = self.data_dir/'首次登录.txt'
             credentials.write_text('Codex App 手机网关\n账号：admin\n密码：'+password+'\n', encoding='utf-8')
             credentials.chmod(0o600)
-        return read_json(self.config_path, {})
+        config = read_json(self.config_path, {})
+        # Keep fresh/legacy configurations consistent with the desktop default,
+        # even when the user starts the gateway without first saving settings.
+        if 'localAccess' not in config:
+            config['localAccess'] = self.preferences()['localAccess']
+            write_json(self.config_path, config)
+        return config
 
     def connect(self, value):
         """Local-only opt-in registration; never return a model/device secret."""
@@ -65,7 +71,7 @@ class Desktop:
         detected = str(executable) if executable.is_file() else shutil.which(name) or ''
         if not detected and sys.platform == 'darwin':
             detected = next((value for value in ('/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared') if Path(value).is_file()), '')
-        defaults = {'autoStart': False, 'port': 8787, 'lan': True, 'lanAddresses': None, 'localAccess': True, 'tunnel': (self.data_dir/'外网地址.txt').exists(),
+        defaults = {'autoStart': False, 'port': 8787, 'lan': False, 'lanAddresses': None, 'localAccess': False, 'tunnel': (self.data_dir/'外网地址.txt').exists(),
                     'cloudflared': detected,
                     'codexHome': os.environ.get('CODEX_HOME', str(Path.home()/'.codex')),
                     'ipcPath': '', 'codexBin': ''}

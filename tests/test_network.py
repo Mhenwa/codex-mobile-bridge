@@ -48,7 +48,7 @@ class SelectionTests(unittest.TestCase):
             desktop = Desktop(folder)
             desktop.status = lambda: {'running': False}
             value = desktop.snapshot()
-            value['preferences'].update(codexHome=folder, lanAddresses=['192.0.2.7'], localAccess=False)
+            value['preferences'].update(codexHome=folder, lan=True, lanAddresses=['192.0.2.7'], localAccess=False)
             saved = desktop.save(value)
             self.assertEqual(saved['urls'], ['http://192.0.2.7:8787/'])
             self.assertEqual(desktop.config()['lanAddresses'], ['192.0.2.7'])
@@ -70,6 +70,25 @@ class SelectionTests(unittest.TestCase):
 
 
 class LocalAccessTests(unittest.TestCase):
+    def test_fresh_desktop_blocks_local_browser_before_any_save(self):
+        with tempfile.TemporaryDirectory(dir=ROOT/'.tmp') as folder:
+            desktop = Desktop(folder)
+            server = GatewayServer(('127.0.0.1', 0), object(), desktop.config(), ROOT/'web', Path(folder))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for path, expected in [('/', 403), ('/api/auth', 403), ('/api/sessions', 403), ('/api/health', 200)]:
+                    conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
+                    try:
+                        conn.request('GET', path)
+                        response = conn.getresponse()
+                        self.assertEqual(response.status, expected, path)
+                        response.read()
+                    finally:
+                        conn.close()
+            finally:
+                server.shutdown();thread.join();server.server_close()
+
     def test_local_browser_blocked_but_private_health_and_tunnel_work(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'.tmp') as folder:
             config = {'auth': {'mode': 'none'}, 'origins': ['https://phone.example.com'], 'localAccess': False}

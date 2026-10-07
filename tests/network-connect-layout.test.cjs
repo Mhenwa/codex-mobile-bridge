@@ -61,3 +61,7 @@ test('advanced settings text remains complete and migration guidance points to t
   assert.match(i18n,/"高级选项":"Advanced options"/);
 });
 
+test('computer registration button has a scoped gap after the computer-name field',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../desktop/style.css'),'utf8');
+  assert.match(css,/#connect-register\s*\{[^}]*margin-top\s*:\s*16px(?:\s*;|\s*\})/);
+});

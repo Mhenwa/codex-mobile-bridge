@@ -6,10 +6,15 @@
   const panel=document.querySelector('[data-panel="network"]');
   if(!panel||!api?.connect)return;
   $('connect-actions').onsubmit=event=>event.preventDefault();
-  let current=null,busy=false,polling=false,grantExpires=0;
+  let current=null,busy=false,polling=false,grantExpires=0,grantUrl='';
   const text=(tag,value)=>{const node=document.createElement(tag);node.textContent=String(value??'');return node;};
   function note(message,error=false){$('connect-feedback').textContent=String(message).replace(/^Error invoking remote method '[^']+': (?:Error: )?/,'');$('connect-feedback').classList.toggle('error',error);}
+  function clearGrant(){
+    grantExpires=0;grantUrl='';$('connect-qr').hidden=true;
+    $('connect-qr-image').removeAttribute('src');$('connect-pair-link').value='';$('connect-copy-link').disabled=true;
+  }
   function renderStatus(value){
+    if(!value.enabled||(current&&current.deviceId!==value.deviceId))clearGrant();
     current=value;
     $('connect-state').textContent=value.message;
     $('connect-device').textContent=value.registered?`${value.deviceName} · ${value.deviceId}`:'尚未注册电脑';
@@ -63,7 +68,7 @@
       if(current.enabled){
         const [claims,authorized]=await Promise.all([api.connect({action:'pairings'}),api.connect({action:'phones'})]);
         pairings(claims.pairings||[]);phones(authorized.phones||[]);
-      }else{pairings([]);phones([]);$('connect-qr').hidden=true;}
+      }else{pairings([]);phones([]);clearGrant();}
     }catch(error){note(error.message,true);}finally{polling=false;}
   }
   $('connect-discover').onclick=async()=>{
@@ -82,20 +87,30 @@
     }catch{}
   };
   $('connect-pair').onclick=async()=>{
+    if(busy)return;
+    clearGrant();
     try{
       const grant=await command({action:'pair'});if(!grant)return;
-      $('connect-qr-image').src=grant.image;$('connect-qr').hidden=false;grantExpires=Number(grant.expires)||0;
-      note('请用手机扫描一次性二维码，然后在本机批准配对。二维码不含模型 Key 或设备令牌。');
+      grantExpires=Number(grant.expires)||0;
+      if(typeof grant.url!=='string'||!grant.url||grantExpires<=Date.now()/1000){clearGrant();note('配对链接无效或已过期，请重新生成。',true);return;}
+      grantUrl=grant.url;$('connect-pair-link').value=grantUrl;$('connect-copy-link').disabled=false;
+      $('connect-qr-image').src=grant.image;$('connect-qr').hidden=false;
+      note('请用手机扫码，或复制配对链接发送到自己的手机打开，然后在本机批准配对。链接和二维码不含模型 Key 或设备令牌。');
     }catch{}
+  };
+  $('connect-copy-link').onclick=async()=>{
+    if(!grantUrl||Date.now()/1000>=grantExpires){clearGrant();note('配对链接已过期，请重新生成。',true);return;}
+    try{await api.copy(grantUrl);note('配对链接已复制，请发送到自己的手机打开，并在本机批准配对。');}
+    catch(error){note(error.message,true);}
   };
   $('connect-disable').onclick=async()=>{
     if(!window.confirm('关闭这台电脑的远程连接，并撤销关联手机？'))return;
-    try{const value=await command({action:'disable'});if(value){renderStatus(value);$('connect-qr').hidden=true;note(value.message);await refresh();}}catch{}
+    try{const value=await command({action:'disable'});if(value){renderStatus(value);clearGrant();note(value.message);await refresh();}}catch{}
   };
   $('connect-refresh').onclick=()=>refresh();
   const observer=new MutationObserver(()=>{if(!panel.hidden)refresh();});observer.observe(panel,{attributes:true,attributeFilter:['hidden']});
   setInterval(()=>{
-    if(grantExpires&&Date.now()/1000>=grantExpires){$('connect-qr').hidden=true;$('connect-qr-image').removeAttribute('src');grantExpires=0;}
+    if(grantExpires&&Date.now()/1000>=grantExpires)clearGrant();
     if(!panel.hidden&&!document.hidden)refresh();
   },3000);
 })();

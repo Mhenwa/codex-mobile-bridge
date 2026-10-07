@@ -62,7 +62,10 @@ async function main(){
     });
   }
   const settings=await worker('snapshot');
-  Object.assign(settings.preferences,{port,lan:true,tunnel:false,codexHome:data,autoStart:false,connections:[
+  assert.equal(settings.preferences.lan,false,'Fresh installs must not expose LAN access');
+  assert.equal(settings.preferences.localAccess,false,'Fresh installs must not enable local browser access');
+  assert.deepEqual(settings.urls,[],'Fresh installs must not advertise local or LAN entries');
+  Object.assign(settings.preferences,{port,lan:true,localAccess:true,tunnel:false,codexHome:data,autoStart:false,connections:[
     {id:'smoke-server',name:'Server test',enabled:true,accessMode:'server',publicUrl:'https://server.example.com',sshTarget:'test-only',sshRemotePort:18787},
     {id:'smoke-nas',name:'NAS test',enabled:true,accessMode:'nas',publicUrl:'https://nas.example.com',proxyUpstream:'http://192.0.2.1:'+port},
     {id:'smoke-quick',name:'Temporary test',enabled:false,accessMode:'quick'}

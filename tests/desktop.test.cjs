@@ -283,14 +283,73 @@ test('opening logs starts at the newest records without changing their contents'
 });
 
 
-test('QR PNG decodes to the exact one-time fragment URL without exposing it in metadata',async()=>{
+test('QR PNG and private desktop copy link contain the exact same one-time fragment URL',async()=>{
   const {pairingImage}=require('../desktop/qr.cjs'),{PNG}=require('pngjs'),decode=require('jsqr');
   const url='https://bridge.example.com/#pair='+'x'.repeat(43);
   const result=await pairingImage({id:'test',url,expires:12345,state:'active'});
-  assert.equal(result.url,undefined);
+  assert.equal(result.url,url);
   const png=PNG.sync.read(Buffer.from(result.image.split(',')[1],'base64'));
   assert.equal(decode(new Uint8ClampedArray(png.data),png.width,png.height).data,url);
   assert.equal(result.id,'test');assert.equal(result.expires,12345);
+});
+
+function legacyPairingFixture(){
+  const fs=require('node:fs'),vm=require('node:vm'),timers=new Map(),calls=[],copied=[];
+  let now=1_000_000,count=0,status='active';
+  const deferred={};
+  function node(){return {children:[],hidden:false,open:false,value:'',disabled:false,textContent:'',attributes:{},
+    append(...values){this.children.push(...values);},setAttribute(name,value){this.attributes[name]=value;},removeAttribute(name){delete this.attributes[name];if(name==='src')delete this.src;}};}
+  const api={pairing:async value=>{
+    calls.push(value);if(value.action==='create')return {id:'grant-'+(++count),url:'https://bridge.example/#pair='+String(count).repeat(43),image:'data:image/png;base64,fixture',state:'active',expires:now/1000+300};
+    if(value.action==='status')return deferred.status?deferred.status:{states:Object.fromEntries(value.ids.map(id=>[id,status]))};
+    return {state:'revoked'};
+  },copy:async value=>{copied.push(value);}};
+  const context=vm.createContext({document:{createElement:node},api,t:value=>value,Date:class extends Date{static now(){return now;}},setInterval:(callback,ms)=>timers.set(ms,callback)});
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../desktop/pairing.js'),'utf8'),context);
+  const card=node();context.appendPairing(card,'https://bridge.example/',true);
+  const entry=vm.runInContext('[...qrEntries.values()][0]',context);
+  async function open(){entry.node.open=true;entry.node.ontoggle();await entry.task;return entry;}
+  return {context,entry,card,calls,copied,deferred,api,open,advance:ms=>{now+=ms;},setStatus:value=>{status=value;},render:()=>context.renderPairing(),poll:async()=>{timers.get(3000)();await new Promise(setImmediate);}};
+}
+
+test('legacy QR entry exposes a readonly copy link identical to its active grant and never submits settings',async()=>{
+  const ui=legacyPairingFixture(),entry=await ui.open();
+  assert.equal(entry.link.value,entry.grant.url);assert.equal(entry.link.readOnly,true);assert.equal(entry.copy.type,'button');
+  assert.equal(entry.copy.disabled,false);await entry.copy.onclick();
+  assert.deepEqual(ui.copied,[entry.grant.url]);assert.match(entry.copyStatus.textContent,/已复制/);
+  assert.equal(ui.calls.filter(value=>value.action==='create').length,1,'copy uses the existing QR grant');
+});
+
+test('legacy copy checks server single-use status and refuses used or elapsed links',async()=>{
+  const ui=legacyPairingFixture(),entry=await ui.open();
+  ui.setStatus('used');await entry.copy.onclick();assert.equal(ui.copied.length,0);assert.equal(entry.link.value,'');assert.equal(entry.copy.disabled,true);
+  ui.setStatus('active');await ui.context.refreshPairing(entry);ui.advance(300_001);await entry.copy.onclick();
+  assert.equal(ui.copied.length,0);assert.equal(entry.link.value,'');assert.equal(entry.copy.disabled,true);
+});
+
+test('legacy link clears on refresh, collapse, reset and gateway stop',async()=>{
+  const ui=legacyPairingFixture(),entry=await ui.open(),old=entry.grant.url;
+  const refresh=ui.context.refreshPairing(entry);assert.equal(entry.link.value,'');assert.equal(entry.copy.disabled,true);await refresh;
+  assert.notEqual(entry.link.value,old);entry.node.open=false;entry.node.ontoggle();assert.equal(entry.link.value,'');assert.equal(entry.copy.disabled,true);
+  await ui.open();ui.context.appendPairing(ui.card,entry.url,false);assert.equal(entry.link.value,'');assert.equal(entry.copy.disabled,true);assert.equal(entry.grant,null);
+  ui.context.appendPairing(ui.card,entry.url,true);await ui.open();ui.context.resetPairing();assert.equal(entry.link.value,'');assert.equal(entry.copy.disabled,true);
+});
+
+test('legacy status/copy race cannot copy or restore a replaced grant',async()=>{
+  const ui=legacyPairingFixture(),entry=await ui.open();let resolve;
+  ui.deferred.status=new Promise(done=>{resolve=done;});const previous=entry.grant;
+  const copying=entry.copy.onclick();await ui.context.refreshPairing(entry);resolve({states:{[previous.id]:'active'}});await copying;
+  assert.equal(ui.copied.length,0);assert.equal(entry.link.value,entry.grant.url);assert.notEqual(entry.grant.id,previous.id);
+});
+
+test('legacy polling consumption clears the link and copy feedback',async()=>{
+  const ui=legacyPairingFixture(),entry=await ui.open();await entry.copy.onclick();assert.match(entry.copyStatus.textContent,/已复制/);
+  ui.setStatus('used');await ui.poll();assert.equal(entry.link.value,'');assert.equal(entry.copy.disabled,true);assert.equal(entry.copyStatus.textContent,'');
+});
+
+test('legacy failed clipboard operation reports an error without claiming copied',async()=>{
+  const ui=legacyPairingFixture(),entry=await ui.open();ui.api.copy=async()=>{throw Error('Clipboard unavailable');};
+  await entry.copy.onclick();assert.equal(entry.error.textContent,'Clipboard unavailable');assert.equal(entry.copyStatus.textContent,'');
 });
 
 const cloudflared=require('../desktop/cloudflared.cjs');
@@ -499,6 +558,21 @@ test('LAN selection drafts survive polling and are saved with local browser acce
   ui.value.runtime.running=true;await ui.poll();
   assert.equal(ui.nodes.get('lan-scope').disabled,true);
   assert.equal(ui.nodes.get('local-access').disabled,true);
+});
+
+test('LAN and local browser controls are opt-in while saved true settings remain checked',async()=>{
+  const ui=await renderer();
+  // Missing fields must not silently enable network/browser access.
+  delete ui.value.preferences.lan;delete ui.value.preferences.localAccess;
+  await ui.poll();
+  assert.equal(Boolean(ui.nodes.get('lan').checked),false);
+  assert.equal(ui.nodes.get('local-access').checked,false);
+  for(const enabled of [false,true]){
+    ui.value.preferences.lan=enabled;ui.value.preferences.localAccess=enabled;
+    await ui.poll();
+    assert.equal(ui.nodes.get('lan').checked,enabled);
+    assert.equal(ui.nodes.get('local-access').checked,enabled);
+  }
 });
 
 test('project navigation uses fixed project destinations',async()=>{

@@ -5,6 +5,7 @@ const fs=require('node:fs');
 const {pathToFileURL}=require('node:url');
 const {runWorker,workerFor,createSnapshotWorker}=require('./controller.cjs');
 const {pairingImage}=require('./qr.cjs');
+const pairingLinks=require('./pairing-links.cjs').createPairingLinks();
 const {createTray}=require('./tray.cjs');
 const {normalize,translate}=require('./i18n.js');
 const cloudflared=require('./cloudflared.cjs');
@@ -21,7 +22,7 @@ let window,dataDir,tray,quitting=false,snapshotPending,lastSnapshot,updateQuitti
 let installPending,installStatus={},updater,workerWrites=0;
 const snapshotWorker=createSnapshotWorker();
 const entry=pathToFileURL(path.join(__dirname,'index.html')).href;
-function releaseTray(){snapshotWorker.close();quitting=true;tray?.dispose();tray=null;}
+function releaseTray(){pairingLinks.clear();snapshotWorker.close();quitting=true;tray?.dispose();tray=null;}
 function loadDataDir(){
   if(process.env.CMB_UPDATE_DATA_DIR)return path.resolve(process.env.CMB_UPDATE_DATA_DIR);
   if(process.env.CMB_DATA_DIR)return path.resolve(process.env.CMB_DATA_DIR);
@@ -47,7 +48,10 @@ function worker(action,payload){
   if(writes)workerWrites++;
   if(action==='snapshot'&&snapshotPending)return snapshotPending;
   const options=workerFor({packaged:app.isPackaged,resources:process.resourcesPath,root,dataDir});
-  const result=(action==='snapshot'&&!updater?.busy?snapshotWorker.read(options):runWorker(options,action,payload)).then(value=>['snapshot','save'].includes(action)?{...value,networkInterfaces:interfaces(),cloudflaredInstall:installStatus,update:updater?.status(),updateResult:updateResult(),updateManaged:updateManaged()}:value).finally(()=>{if(writes)workerWrites--;});
+  const result=(action==='snapshot'&&!updater?.busy?snapshotWorker.read(options):runWorker(options,action,payload)).then(value=>{
+    if(action==='stop')pairingLinks.clear();
+    return ['snapshot','save'].includes(action)?{...value,networkInterfaces:interfaces(),cloudflaredInstall:installStatus,update:updater?.status(),updateResult:updateResult(),updateManaged:updateManaged()}:value;
+  }).finally(()=>{if(writes)workerWrites--;});
   if(action==='snapshot')snapshotPending=result.then(value=>{lastSnapshot=value;return value;}).finally(()=>{snapshotPending=null;});
   return action==='snapshot'?snapshotPending:result;
 }
@@ -140,17 +144,24 @@ function register(){
   });
   ipcMain.handle('bridge:pairing',async(event,payload)=>{
     authorize(event);
+    if(payload?.action==='revoke')pairingLinks.forget('legacy',payload.id);
     const grant=await worker('pairing',payload);
-    if(payload.action!=='create')return grant;
-    try{return await pairingImage(grant);}
+    if(payload?.action==='status')pairingLinks.legacyStatus(payload.ids||[payload.id],grant.states||{[payload.id]:grant.state});
+    if(payload?.action!=='create')return grant;
+    try{const rendered=await pairingImage(grant);pairingLinks.remember('legacy',grant);return rendered;}
     catch(error){await worker('pairing',{action:'revoke',id:grant.id});throw error;}
   });
   ipcMain.handle('bridge:connect',async(event,payload)=>{
     authorize(event);
+    if(['disable','register'].includes(payload?.action))pairingLinks.forget('connect');
+    if(payload?.action==='approve')pairingLinks.forget('connect',payload.id);
     const grant=await worker('connect',payload);
     // Pairing URLs are one-use bearer claims, rendered locally and never sent
     // to third-party QR services, logs or operating-system URL handlers.
-    return payload?.action==='pair'?pairingImage(grant):grant;
+    if(payload?.action==='pairings')pairingLinks.connectPairings(grant.pairings);
+    if(payload?.action==='status'&&!grant.enabled)pairingLinks.forget('connect');
+    if(payload?.action!=='pair')return grant;
+    const rendered=await pairingImage(grant);pairingLinks.remember('connect',grant);return rendered;
   });
   ipcMain.handle('bridge:export-deployment',async(event,payload)=>{
     authorize(event);
@@ -177,6 +188,7 @@ function register(){
       if(updater.busy)throw Error('正在更新应用，请稍候。');
       if(installPending)throw Error('正在安装 cloudflared，请完成后再切换数据目录。');
       installStatus={};
+      pairingLinks.clear();
       dataDir=selected;fs.mkdirSync(app.getPath('userData'),{recursive:true});
       fs.writeFileSync(path.join(app.getPath('userData'),'bridge-location.json'),JSON.stringify({dataDir}),{mode:0o600});
     }
@@ -201,9 +213,11 @@ function register(){
     await shell.openExternal(target);
   });
   ipcMain.handle('bridge:copy',async(event,target)=>{
-    authorize(event);const snapshot=await worker('snapshot');
+    authorize(event);
+    if(pairingLinks.has(target)){await clipboard.writeText(target);return;}
+    const snapshot=await worker('snapshot');
     if(!snapshot.urls.includes(target))throw Error('地址不可用');
-    clipboard.writeText(target);
+    await clipboard.writeText(target);
   });
 }
 function createWindow(){

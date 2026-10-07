@@ -2,6 +2,11 @@
 // UI messages only. Never translate chat content, commands, model IDs or user input.
 const BridgeI18n=(()=>{
 const en={
+"登录链接":"Sign-in link",
+"复制登录链接":"Copy sign-in link",
+"登录链接已复制，请发送到自己的手机。":"Sign-in link copied. Send it to your own phone.",
+"使用手机相机扫码，或复制登录链接发送到自己的手机并在浏览器打开。手机需要能访问此地址。":"Scan with your phone camera, or copy the sign-in link to your own phone and open it in a browser. Your phone must be able to reach this address.",
+"二维码和链接 5 分钟内有效，仅可使用一次。持有码或链接即可登录，请勿公开分享；收起或刷新会撤销旧码和链接。登录后可使用 12 小时。":"The code and link are valid for 5 minutes and one use. Anyone holding either can sign in, so keep them private. Collapsing or refreshing revokes both. Your signed-in session lasts 12 hours.",
 "高级选项":"Advanced options",
 "在“网络与登录”底部展开“高级选项”，添加并启用“临时 HTTPS · Cloudflare”，保存配置。可以同时保留局域网连接。":"At the bottom of Network and login, expand Advanced options, add and enable Temporary HTTPS · Cloudflare, then save. LAN access can stay enabled.",
 "网关启动与入口通知":"Gateway startup and entry notifications",
