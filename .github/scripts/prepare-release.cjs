@@ -67,7 +67,8 @@ async function prepare(directory, version) {
 
 function verifyUploaded(plan, release) {
   const uploaded = release.assets || [];
-  if (!release.draft || release.prerelease || release.tag_name !== plan.tag || uploaded.length !== plan.assets.length) {
+  if (!Number.isSafeInteger(release.id) || release.id <= 0 || !release.draft || release.prerelease ||
+      release.tag_name !== plan.tag || release.target_commitish !== plan.commit || uploaded.length !== plan.assets.length) {
     throw Error('Draft release identity or asset count does not match the publication plan.');
   }
   for (const expected of plan.assets) {
@@ -99,7 +100,9 @@ async function main(args) {
     fs.writeFileSync(bodyFile, `${notes}\n\n构建来源：[Desktop builds #${source.run_number}](${source.html_url})，源码提交 \`${source.head_sha}\`。\n`);
     output('tag', tag);
   } else if (args[0] === 'verify') {
-    verifyUploaded(read(args[1]), read(args[2]));
+    const release = read(args[2]);
+    verifyUploaded(read(args[1]), release);
+    output('release_id', release.id);
   } else {
     throw Error('Usage: prepare-release.cjs validate|prepare|verify ...');
   }

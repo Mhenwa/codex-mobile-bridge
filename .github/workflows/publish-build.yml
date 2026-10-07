@@ -58,18 +58,25 @@ jobs:
           RELEASE_TAG: ${{ steps.packages.outputs.tag }}
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
         run: |
-          gh release create "$RELEASE_TAG" dist/release/* --target "$SOURCE_COMMIT" --draft --title "Codex Mobile Bridge $RELEASE_TAG · Mhenwa Connect" --notes-file "$RUNNER_TEMP/release-body.md"
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate --jq '.[] | select(.tag_name == env.RELEASE_TAG)' > "$RUNNER_TEMP/existing-release.json"
+          if [[ -s "$RUNNER_TEMP/existing-release.json" ]]; then
+            node .github/scripts/prepare-release.cjs verify "$RUNNER_TEMP/release-plan.json" "$RUNNER_TEMP/existing-release.json"
+          else
+            gh release create "$RELEASE_TAG" dist/release/* --target "$SOURCE_COMMIT" --draft --title "Codex Mobile Bridge $RELEASE_TAG · Mhenwa Connect" --notes-file "$RUNNER_TEMP/release-body.md"
+          fi
       - name: Verify uploaded files before publishing
+        id: verified
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.packages.outputs.tag }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/uploaded-release.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate --jq '.[] | select(.tag_name == env.RELEASE_TAG)' > "$RUNNER_TEMP/uploaded-release.json"
           node .github/scripts/prepare-release.cjs verify "$RUNNER_TEMP/release-plan.json" "$RUNNER_TEMP/uploaded-release.json"
       - name: Publish the verified stable release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.packages.outputs.tag }}
+          RELEASE_ID: ${{ steps.verified.outputs.release_id }}
         run: |
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false -f make_latest=true --silent
           gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

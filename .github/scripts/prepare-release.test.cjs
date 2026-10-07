@@ -47,14 +47,15 @@ test('complete platform packages produce identical fixed aliases and checksums',
     assert.deepEqual(fs.readFileSync(path.join(directory, original.name)), fs.readFileSync(path.join(directory, alias.name)));
   }
   const release = {
-    tag_name: 'v1.4.0', draft: true, prerelease: false,
+    id: 123, tag_name: 'v1.4.0', target_commitish: run.head_sha, draft: true, prerelease: false,
     assets: assets.map(asset => ({ ...asset, state: 'uploaded', digest: `sha256:${asset.sha256}` })),
   };
-  const plan = { tag: 'v1.4.0', assets };
+  const plan = { tag: 'v1.4.0', commit: run.head_sha, assets };
   verifyUploaded(plan, release);
   assert.throws(() => verifyUploaded(plan, { ...release, assets: release.assets.slice(1) }));
   assert.throws(() => verifyUploaded(plan, { ...release, assets: release.assets.map((asset, index) => index ? asset : { ...asset, digest: 'sha256:bad' }) }));
   assert.throws(() => verifyUploaded(plan, { ...release, draft: false }));
+  assert.throws(() => verifyUploaded(plan, { ...release, target_commitish: 'main' }));
 });
 
 test('incomplete or unexpected packages cannot be published', async t => {
