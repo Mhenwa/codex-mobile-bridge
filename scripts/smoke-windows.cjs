@@ -80,7 +80,8 @@ async function main(){
   }
   let stderr='',client,started=false,child,exited;
   function launch(){
-    child=spawn(executable,['--remote-debugging-address=127.0.0.1','--remote-debugging-port='+debugPort],{env,stdio:['ignore','ignore','pipe']});
+    // An unrelated foreground window must not suspend this UI smoke test.
+    child=spawn(executable,['--disable-features=CalculateNativeWinOcclusion','--remote-debugging-address=127.0.0.1','--remote-debugging-port='+debugPort],{env,stdio:['ignore','ignore','pipe']});
     child.stderr.on('data',value=>stderr+=value);
     exited=new Promise(resolve=>{child.on('exit',resolve);child.on('error',resolve);});
   }

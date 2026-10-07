@@ -67,7 +67,7 @@ test('development launch keeps script as its own argument',()=>{
 
 // Exercise the real renderer's start and polling handlers with a controlled
 // backend and clock. DOM layout and input editing are outside these checks.
-async function renderer(initialLanguage='zh-CN'){
+async function renderer(initialLanguage='zh-CN',{hidden=false}={}){
   const fs=require('node:fs'),vm=require('node:vm');
   const nodes=new Map();
   function node(){return {closest(){return null;},value:'',checked:false,hidden:false,open:false,textContent:'',dataset:{},
@@ -82,12 +82,26 @@ async function renderer(initialLanguage='zh-CN'){
   const api={account:async()=>({visible:false}),language:async()=>initialLanguage,setLanguage:async value=>value,snapshot:async()=>structuredClone(value),start:async()=>({started:true,message:'正在启动网关'}),
     save:async payload=>{value.preferences={...value.preferences,...payload.preferences};return structuredClone(value);},logs:async()=>({text:''})};
   const context=vm.createContext({window:{bridgeDesktop:api},
-    localStorage:{getItem(){return null;},setItem(){}},document:{hidden:false,addEventListener(name,fn){this[name]=fn;},documentElement:{},getElementById:id=>nodes.get(id),createElement:node,querySelectorAll:()=>[]},
+    localStorage:{getItem(){return null;},setItem(){}},document:{hidden,addEventListener(name,fn){this[name]=fn;},documentElement:{},getElementById:id=>nodes.get(id),createElement:node,querySelectorAll:()=>[]},
     URL,Date:class extends Date{static now(){return now;}},setTimeout(){},clearTimeout(){},clearInterval(){},setInterval:(callback,ms)=>{if(callback.name==='refresh')poll=callback;}});
   for(const name of ['web/i18n.js','desktop/connections.js','desktop/pairing.js','web/account.js','desktop/watches.js','desktop/renderer.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',name),'utf8'),context);
   await new Promise(setImmediate);
   return {nodes,value,context,api,run:code=>vm.runInContext(code,context),poll:()=>poll(),advance:ms=>{now+=ms;},start:()=>nodes.get('start').onclick()};
 }
+
+test('hidden launch initializes settings once, pauses polling, and resumes when visible',async()=>{
+  const ui=await renderer('zh-CN',{hidden:true});
+  assert.equal(ui.run('snapshot?.preferences.port'),8787);
+  assert.equal(ui.nodes.get('port').value,8787);
+  assert.equal(ui.run('loading'),false);
+  let reads=0;
+  ui.api.snapshot=async()=>{reads++;return structuredClone(ui.value);};
+  await ui.poll();await ui.poll();
+  assert.equal(reads,0,'initialized hidden windows do not poll the backend');
+  ui.context.document.hidden=false;
+  await ui.context.document.visibilitychange();await new Promise(setImmediate);
+  assert.equal(reads,1,'showing the window refreshes its settings');
+});
 
 test('startup feedback follows readiness, page changes and later shutdown',async()=>{
   const ui=await renderer();await ui.start();

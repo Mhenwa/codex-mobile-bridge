@@ -42,7 +42,7 @@ async function main(){
   const work=await fs.mkdtemp(path.join(root,'.tmp/update-smoke-中文 ')),target=path.join(work,mac?'Codex Mobile Bridge.app':'app'),data=path.join(work,'data');
   await fs.cp(source,target,{recursive:true,verbatimSymlinks:true});await fs.mkdir(data);
   const {app,runtime}=paths(target),settings=await worker(runtime,data,'snapshot'),gatewayPort=await port();
-  Object.assign(settings.preferences,{port:gatewayPort,lan:false,autoStart:false,tunnel:false,connections:[],codexHome:data});
+  Object.assign(settings.preferences,{port:gatewayPort,lan:false,localAccess:true,autoStart:false,tunnel:false,connections:[],codexHome:data});
   await worker(runtime,data,'save',settings);await fs.writeFile(path.join(data,'notification-watches.json'),'[]\n');
   const preserved=['config.json','desktop.json','notifications.json','notification-watches.json'];
   const originals=await Promise.all(preserved.map(name=>fs.readFile(path.join(data,name))));
@@ -53,7 +53,8 @@ async function main(){
   try{
     for(const scenario of mac?['success','rollback']:['legacy-cwd','success','rollback']){
       const debugPort=await port();
-      appChild=spawn(app,['--remote-debugging-address=127.0.0.1','--remote-debugging-port='+debugPort],{cwd:target,env,stdio:'ignore'});
+      // Windows UI checks must also work while another window covers the app.
+      appChild=spawn(app,[...(!mac?['--disable-features=CalculateNativeWinOcclusion']:[]),'--remote-debugging-address=127.0.0.1','--remote-debugging-port='+debugPort],{cwd:target,env,stdio:'ignore'});
       const exit=new Promise(resolve=>appChild.once('exit',resolve));
       await inspectUI(debugPort,path.join(work,scenario+'-updates.png'));
       const {publicKey,privateKey}=generateKeyPairSync('ed25519');

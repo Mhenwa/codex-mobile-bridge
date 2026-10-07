@@ -18,7 +18,7 @@ app.whenReady().then(async()=>{
   let desktop,phone,started=false,exitCode=0;
   try{
     const value=await worker('snapshot');
-    value.preferences={...value.preferences,port:await freePort(),lan:true,tunnel:false,connections:[],autoStart:false,codexHome:data,ipcPath:path.join(data,'unavailable.sock')};
+    value.preferences={...value.preferences,port:await freePort(),lan:true,localAccess:true,tunnel:false,connections:[],autoStart:false,codexHome:data,ipcPath:path.join(data,'unavailable.sock')};
     value.auth.password='isolated-qr-test-password';await worker('save',value);
     await worker('start');started=true;await until(async()=>(await worker('snapshot')).runtime.running,'gateway');
     desktop=new BrowserWindow({show:false,width:900,height:1000,webPreferences:{preload:path.join(__dirname,'smoke-pairing-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:false}});
@@ -78,5 +78,10 @@ app.whenReady().then(async()=>{
     fs.writeFileSync(path.join(data,'phone-signed-in.png'),(await phone.capturePage()).toPNG());
     console.log(JSON.stringify({ok:true,data,checks:['QR PNG decode','collapsed by default','polling and locale preserve expanded grant','refresh revokes previous QR','automatic phone login','fragment removed; no token in query parameters','one-time replay rejected','password fallback','collapse revocation','no overflow at 390px']}));
   }catch(error){console.error(error);exitCode=1;}
-  finally{desktop?.destroy();phone?.destroy();if(started)try{await worker('stop');}catch(error){console.error(error);exitCode=1;}app.exit(exitCode);}
+  finally{
+    // Keep a window alive until the stop worker acknowledges gateway shutdown.
+    // Destroying the last window first lets Electron quit before teardown finishes.
+    if(started)try{await worker('stop');}catch(error){console.error(error);exitCode=1;}
+    desktop?.destroy();phone?.destroy();app.exit(exitCode);
+  }
 });
