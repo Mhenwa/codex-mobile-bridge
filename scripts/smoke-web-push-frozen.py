@@ -122,6 +122,8 @@ def make_proxy(context):
                     self.handle_one_request()
             except (OSError, ValueError) as exc:
                 errors.append(type(exc).__name__+': '+str(exc))
+            finally:
+                self.close_connection = True
 
         def do_POST(self):
             try:
@@ -172,7 +174,9 @@ def verify(runtime, keep=False):
     if not runtime.is_file() or runtime.suffix.lower() == '.py':
         raise ValueError('Pass an existing frozen gateway executable, not Python source')
     (ROOT/'.tmp').mkdir(exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix='web-push-frozen-中文 ', dir=ROOT/'.tmp'))
+    # Exercise explicit CA loading even when the Windows ANSI code page cannot
+    # represent the data path, independently of the runner's language setting.
+    temporary = Path(tempfile.mkdtemp(prefix='web-push-frozen-中文 \U0001f9ea ', dir=ROOT/'.tmp'))
     process = fixture = proxy = proxy_worker = None
     success = False
     log = None
@@ -286,6 +290,9 @@ def verify(runtime, keep=False):
         path = temporary/'frozen-gateway.log'
         if path.is_file():
             print(path.read_text(encoding='utf-8', errors='replace')[-12000:], file=sys.stderr)
+        if proxy:
+            print(json.dumps({'proxyErrors': errors, 'httpsTunnels': len(tunnels),
+                              'receivedEvents': len(events)}, ensure_ascii=True), file=sys.stderr)
         print('Smoke evidence retained at '+str(temporary), file=sys.stderr)
         raise
     finally:
@@ -309,6 +316,8 @@ def verify(runtime, keep=False):
 
 
 if __name__ == '__main__':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('runtime', type=Path)
     parser.add_argument('--keep', action='store_true', help='Keep synthetic data and gateway log after success')

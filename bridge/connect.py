@@ -23,7 +23,9 @@ import uuid
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHandler
+
+from .tls import client_context
 
 DEFAULT_RELAY = 'https://codex.mhenwa.cc'
 CONNECT_USER_AGENT = 'MhenwaConnect/1.4.0'
@@ -172,7 +174,7 @@ class ConnectController:
                           data=json.dumps(value or {}).encode() if method == 'POST' else None,
                           headers=headers, method=method)
         try:
-            with build_opener(NoRedirect()).open(request, timeout=_timeout) as response:
+            with build_opener(NoRedirect(), HTTPSHandler(context=client_context())).open(request, timeout=_timeout) as response:
                 raw = response.read(MAX_CONTROL_RESPONSE + 1)
                 if len(raw) > MAX_CONTROL_RESPONSE:
                     raise ValueError('Connect 响应超过限制')

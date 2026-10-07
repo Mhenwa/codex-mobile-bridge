@@ -10,6 +10,7 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 from bridge.access import read_auth
+from bridge.connect import ConnectController
 from bridge.notifications import publish
 from bridge import tls
 
@@ -88,3 +89,26 @@ class TLSTests(unittest.TestCase):
                     read_auth(self.url)
                 with patch.dict(os.environ, {'SSL_CERT_FILE': str(FIXTURES/'ca.pem')}):
                     self.assertEqual(read_auth(self.url)['instanceId'], 'test')
+
+    def test_connect_https_uses_bundle_and_rejects_untrusted_or_wrong_hostname(self):
+        controller = ConnectController(self.temporary.name, relay_url=self.url)
+        with patch.object(tls.sys, 'frozen', True, create=True), patch.object(tls, 'BUNDLED_CA', FIXTURES/'ca.pem'):
+            self.assertEqual(controller.request('POST', '/connect/device/notifications', {}, device=False), {})
+            other = ConnectController(self.temporary.name, relay_url=self.url.replace('localhost', '127.0.0.1'))
+            with self.assertRaisesRegex(ValueError, '无法连接 Connect'):
+                other.request('POST', '/connect/device/notifications', {}, device=False)
+        with patch.object(tls.sys, 'frozen', False, create=True), self.assertRaisesRegex(ValueError, '无法连接 Connect'):
+            controller.request('POST', '/connect/device/notifications', {}, device=False)
+        self.assertEqual(len(self.received), 1)
+
+    def test_connect_source_honors_unicode_certificate_file(self):
+        # OpenSSL's environment path lookup can lose characters outside the
+        # Windows ANSI code page; Python must load the explicit Unicode path.
+        directory = Path(self.temporary.name)/'custom-ca-\U0001f9ea'
+        directory.mkdir()
+        certificate = directory/'ca.pem'
+        certificate.write_bytes((FIXTURES/'ca.pem').read_bytes())
+        controller = ConnectController(self.temporary.name, relay_url=self.url)
+        with patch.object(tls.sys, 'frozen', False, create=True), patch.dict(os.environ, {'SSL_CERT_FILE': str(certificate)}):
+            self.assertEqual(controller.request('POST', '/connect/device/notifications', {}, device=False), {})
+        self.assertEqual(len(self.received), 1)
