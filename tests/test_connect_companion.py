@@ -204,14 +204,14 @@ class ControllerTests(unittest.TestCase):
             self.controller.control({'action': 'register', 'consent': True,
                                      'provider': 'fixture', 'deviceName': 'Fixture'})
             registration = opener.return_value.open.call_args.args[0]
-            self.assertEqual(registration.get_header('User-agent'), 'MhenwaConnect/1.3.3')
+            self.assertEqual(registration.get_header('User-agent'), 'MhenwaConnect/1.4.0')
             self.assertIsNone(registration.get_header('Authorization'))
             self.assertEqual(json.loads(registration.data)['apiKey'], KEY)
 
             response.read.return_value = b'{"phones": []}'
             self.controller.control({'action': 'phones'})
             device = opener.return_value.open.call_args.args[0]
-            self.assertEqual(device.get_header('User-agent'), 'MhenwaConnect/1.3.3')
+            self.assertEqual(device.get_header('User-agent'), 'MhenwaConnect/1.4.0')
             self.assertEqual(device.get_header('Authorization'), 'Bearer ' + DEVICE)
             self.assertEqual(device.full_url, 'https://codex.mhenwa.cc/connect/device/phones')
             self.assertIsNone(device.data)
@@ -310,8 +310,11 @@ class ForwardTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_double_allowlist_blocks_management_arbitrary_hosts_and_sse(self):
         paths = ['/api/accounts', '/api/accounts/switch', '/api/login', '/api/auth', '/api/health',
+                 '/api/accounts/ignore-submission',
                  '/api/pair', '/api/logout', '/api/notification-settings',
                  '/api/sessions/' + THREAD + '/events', 'http://evil.invalid/api/sessions',
+                 '/api/sessions/' + THREAD + '/catalog?host=local&host=other',
+                 '/api/sessions/' + THREAD + '/catalog?' + '&'.join('id=skill-' + str(i) for i in range(9)),
                  '//evil.invalid/api/sessions', '/api/%2e%2e/admin', '/api/sessions?deviceId=another']
         for path in paths:
             result = await self.connector.forward(self.client, self.message(path=path))
@@ -358,7 +361,7 @@ class ForwardTests(unittest.IsolatedAsyncioTestCase):
         async def device(request):
             try:
                 self.assertEqual(request.headers.get('Authorization'), 'Bearer ' + DEVICE)
-                self.assertEqual(request.headers.get('User-Agent'), 'MhenwaConnect/1.3.3')
+                self.assertEqual(request.headers.get('User-Agent'), 'MhenwaConnect/1.4.0')
                 self.assertNotIn(KEY, str(request.headers))
                 ws = web.WebSocketResponse()
                 await ws.prepare(request)
@@ -531,6 +534,26 @@ class ForwardTests(unittest.IsolatedAsyncioTestCase):
             async with phone.get(origin + '/api/sessions') as response:
                 self.assertEqual(response.status, 200)
                 self.assertEqual((await response.json())['sessions'], [{'id': THREAD}])
+            # Exercise both allowlists and the real v1.4 HTTP handler, not only
+            # protocol validation: selected Skill IDs must reach the gateway.
+            self.bridge.catalog = Mock(return_value={'kind': 'models', 'models': []})
+            async with phone.get(origin + '/api/sessions/' + THREAD + '/catalog?kind=models') as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual((await response.json())['kind'], 'models')
+            self.bridge.catalog.assert_called_once_with(
+                THREAD, refresh=False, kind='models', query='', offset=0, limit=200, ids=[])
+            skill_ids = ['skill-' + str(index) for index in range(8)]
+            skill_query = '?host=local&kind=skills&q=selected%20skill&offset=200&limit=200&refresh=true'
+            skill_query += ''.join('&id=' + value for value in skill_ids)
+            self.bridge.catalog.return_value = {'kind': 'skills', 'skills': []}
+            async with phone.get(origin + '/api/sessions/' + THREAD + '/catalog' + skill_query) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual((await response.json())['kind'], 'skills')
+            self.bridge.catalog.assert_called_with(
+                THREAD, refresh=True, kind='skills', query='selected skill', offset=200, limit=200, ids=skill_ids)
+            async with phone.get(origin + '/api/sessions/' + THREAD + '/catalog' + skill_query + '&id=ninth') as response:
+                self.assertEqual(response.status, 400)
+            self.assertEqual(self.bridge.catalog.call_count, 2)
             async with phone.post(origin + '/api/sessions/' + THREAD + '/send',
                                   headers={'Origin': origin, 'X-CSRF-Token': approved['csrf']},
                                   json={'text': 'fixture', 'id': 'stable-real-relay-submission'}) as response:

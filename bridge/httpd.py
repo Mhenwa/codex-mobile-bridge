@@ -19,7 +19,7 @@ from socketserver import TCPServer
 from urllib.parse import parse_qs, urlsplit, quote
 
 from .pairing import Pairing
-from .auth import Auth
+from .auth import Auth, LoginRejected
 from .ipc import IPCError
 from .goal import GoalError
 from .catalog import CatalogError
@@ -160,7 +160,8 @@ class Handler(BaseHTTPRequestHandler):
     def cookie(self, token, clear=False):
         secure = "; Secure" if self.headers.get("Host") in self.server.secure_hosts else ""
         age = 0 if clear else self.server.auth.cookie_age(token)
-        return f"{Auth.COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={age}{secure}"
+        lifetime = f"; Max-Age={age}" if age is not None else ""
+        return f"{Auth.COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict{lifetime}{secure}"
 
     def client(self):
         return self.server.auth.client(self.client_address[0], self.headers, self.headers.get('Host') in self.server.secure_hosts)
@@ -186,7 +187,12 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if (origin and origin not in self.server.origins) or (write and not origin):
             raise PermissionError("不允许跨站请求")
-        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+        # External links may open the public HTML shell. Fetches, embedded pages
+        # and API requests must still pass the cross-site restriction.
+        homepage_navigation = (not write and self.command == 'GET' and urlsplit(self.path).path == '/'
+                               and self.headers.get('Sec-Fetch-Mode') == 'navigate'
+                               and self.headers.get('Sec-Fetch-Dest') == 'document')
+        if self.headers.get("Sec-Fetch-Site") == "cross-site" and not homepage_navigation:
             raise PermissionError("不允许跨站请求")
 
     def authorized(self, write=False):
@@ -247,19 +253,20 @@ class Handler(BaseHTTPRequestHandler):
             if not write and path == "/api/auth":
                 session = self.login_session()
                 return self.output(200, {"authenticated": bool(session), "csrf": session["csrf"] if session else None,
+                                         "loginStatus": self.server.auth.login_status(self.client()["ip"]),
                                          "instanceId": self.server.instance_id,
                                          "notifications": self.server.notifications is not None,
                                          "passwordless": self.server.auth.config.get("mode") == "none",
                                          "transport": "poll" if self.headers.get("Host", "").endswith(".trycloudflare.com") else "sse"},
                                    cookie=self.cookie(self.token()) if session else None)
-            if not self.server.auth.permitted(self.client()['ip']):
+            if not self.server.auth.permitted(self.client()['ip']) and path != '/api/login':
                 raise PermissionError('此 IP 已被访问规则禁止')
             if write and path == "/api/login":
                 body = self.read_json()
                 username, password = body.get("username", ""), body.get("password", "")
                 if not isinstance(username, str) or not isinstance(password, str) or len(username) > 200 or len(password) > 1000:
                     raise ValueError("账号或密码格式不正确")
-                token, session = self.server.auth.login(username, password, self.client()['ip'], self.headers.get('User-Agent', ''), self.client())
+                token, session = self.server.auth.login(username, password, self.client()['ip'], self.headers.get('User-Agent', ''), self.client(), remember=body.get('remember'))
                 self.server.auth.logout(self.token())
                 return self.output(200, {"csrf": session["csrf"]}, cookie=self.cookie(token))
             if write and path == '/api/pair':
@@ -287,6 +294,11 @@ class Handler(BaseHTTPRequestHandler):
                 if set(body) - {'id', 'section', 'refresh'} or not {'id', 'section'} <= set(body):
                     raise ValueError('账号详情请求包含不支持的字段')
                 return self.output(202, self.server.bridge.accounts.info.request(body))
+            if write and path == '/api/accounts/ignore-submission':
+                body = self.read_json()
+                if set(body) != {'threadId', 'submissionId', 'host'}:
+                    raise ValueError('忽略请求包含不支持的字段')
+                return self.output(200, self.server.bridge.accounts.ignore_submission(body))
             if write and path == '/api/accounts/switch':
                 if self.server.auth.config.get('mode') == 'none':
                     raise PermissionError('免密访问不能切换账号，请在桌面端操作')
@@ -407,7 +419,19 @@ class Handler(BaseHTTPRequestHandler):
                 if action is None:
                     return self.output(200, bridge.view(thread_id, background=True))
                 if action == "catalog":
-                    return self.output(200, bridge.catalog(thread_id, refresh=query.get("refresh") == ["true"]))
+                    kind = query.get("kind", [None])[0]
+                    try:
+                        offset = max(0, int(query.get("offset", ["0"])[0]))
+                        limit = min(500, max(1, int(query.get("limit", ["200"])[0])))
+                    except ValueError:
+                        raise ValueError("Skill 分页参数无效") from None
+                    requested_ids = [value for value in query.get("id", []) if value]
+                    if len(requested_ids) > 8:
+                        raise ValueError("最多关联 8 个已选 Skill")
+                    ids = list(dict.fromkeys(requested_ids))
+                    return self.output(200, bridge.catalog(
+                        thread_id, refresh=query.get("refresh") == ["true"], kind=kind,
+                        query=query.get("q", [""])[0][:200], offset=offset, limit=limit, ids=ids))
                 if action == "poll":
                     return self.poll(bridge, thread_id, int(query.get("after", ["-1"])[0]))
                 if action == "events":
@@ -449,6 +473,9 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self.output(404, {"error": "接口不存在"})
             self.output(200, result)
+        except LoginRejected as exc:
+            self.close_connection = True
+            self.output(403, {"error": str(exc), "loginStatus": exc.status})
         except PermissionError as exc:
             self.close_connection = True
             self.output(403, {"error": str(exc)})

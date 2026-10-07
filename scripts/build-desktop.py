@@ -9,9 +9,11 @@ from importlib.metadata import distribution
 from pathlib import Path
 import certifi
 root = Path(__file__).resolve().parents[1]
+subprocess.run([sys.executable, str(root/'scripts/bundle-cloudflared.py')], check=True)
 command = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--name', 'codex-mobile-gateway',
            '--distpath', str(root/'dist'), '--workpath', str(root/'.tmp/pyinstaller'), '--specpath', str(root/'.tmp'),
            '--add-data', str(root/'web')+':web']
+command.extend(['--add-data', str(root/'dist/cloudflared')+':cloudflared', '--collect-all', 'paramiko', '--collect-all', 'keyring'])
 if sys.platform == 'darwin':
     command.extend(['--target-arch', platform.machine()])
 # Ship roots and their license explicitly; source users still need only stdlib.

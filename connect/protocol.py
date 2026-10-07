@@ -18,7 +18,8 @@ _GET_ACTIONS = {None, "catalog", "poll", "timeline", "detail", "changes", "notif
 _POST_ACTIONS = {"send", "stop", "history", "respond", "reconnect", "queue",
                  "settings", "uploads", "message-action", "rename", "notifications"}
 _QUERY = {
-    None: {"host"}, "catalog": {"host", "refresh"}, "poll": {"host", "after"},
+    None: {"host"}, "catalog": {"host", "refresh", "kind", "q", "limit", "offset", "id"},
+    "poll": {"host", "after"},
     "timeline": {"host", "limit", "before"}, "detail": {"host", "key", "offset", "version"},
     "changes": {"host", "after", "epoch", "start"}, "uploads": {"host", "id", "name"},
     "preview": {"host", "variant"}, "thumb": {"host", "width", "height"},
@@ -43,6 +44,7 @@ def validate_request(method, path, body_size, content_type):
     if method == "GET" and body_size:
         raise ValueError("GET body is not permitted")
     route, allowed_query, binary = parsed.path, set(), False
+    catalog_query = False
     if route == "/api/sessions":
         allowed_query = {"q", "offset", "archived"} if method == "GET" else set()
     elif route == "/api/projects" and method == "GET":
@@ -68,14 +70,24 @@ def validate_request(method, path, body_size, content_type):
             raise ValueError("API operation is not permitted")
         binary = action == "uploads"
         allowed_query = _QUERY.get(action, {"host"})
+        catalog_query = method == "GET" and action == "catalog"
     try:
-        query = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True, max_num_fields=12)
+        query = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True,
+                          max_num_fields=14 if catalog_query else 12)
     except ValueError:
         raise ValueError("invalid query") from None
     seen = set()
+    catalog_ids = 0
     for key, value in query:
-        if key not in allowed_query or key in seen or len(value) > 4096 or any(ord(c) < 32 for c in value):
+        # Selected Skills are the only repeated query field in the chat API.
+        # Keep the gateway's eight-Skill cap and reject duplicate routing fields.
+        repeated_id = catalog_query and key == "id"
+        if key not in allowed_query or (key in seen and not repeated_id) or len(value) > 4096 or any(ord(c) < 32 for c in value):
             raise ValueError("query field is not permitted")
+        if repeated_id:
+            catalog_ids += 1
+            if catalog_ids > 8:
+                raise ValueError("too many selected Skills")
         seen.add(key)
     if method == "POST" and not binary and content_type.split(";", 1)[0].lower() != "application/json":
         raise ValueError("JSON content type required")

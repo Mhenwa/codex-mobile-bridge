@@ -26,7 +26,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 DEFAULT_RELAY = 'https://codex.mhenwa.cc'
-CONNECT_USER_AGENT = 'MhenwaConnect/1.3.3'
+CONNECT_USER_AGENT = 'MhenwaConnect/1.4.0'
 MAX_CONTROL_RESPONSE = 256 * 1024
 
 

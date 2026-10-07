@@ -132,5 +132,10 @@ async function runTimelineVisibilityTests() {
   check(requested===1&&!backfill.nodes.get('final').node.hidden,'A page of hidden activity backfills earlier replies');
   check(!backfill.hasMore,'Filtered history still stops at the end');
   backfill.dispose();
+  const empty=new ChatTimeline({url:action=>'/fixture/'+action+'?host=local',request:async()=>page([{key:'empty-image',role:'activity',kind:'imageView',title:'图片预览',text:'',order:0,version:'v1',truncated:false}],1),renderMeta:()=>{},renderText:(node,text)=>node.textContent=text,status:()=>{}});
+  empty.apply(page([{key:'empty-image',role:'activity',kind:'imageView',title:'图片预览',text:'',order:0,version:'v1',truncated:false}],1),true);
+  const emptyBody=empty.nodes.get('empty-image').node.querySelector('.activity-body');
+  check(emptyBody.hidden&&getComputedStyle(emptyBody).display==='none','Empty image preview body does not reserve space');
+  empty.dispose();
   return checks;
 }

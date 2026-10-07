@@ -126,6 +126,7 @@ class ChatTimeline {
     const paint=()=>{
       const detail=this.details.get(row.key),text=detail?.text??row.text;
       body.replaceChildren();if(activity)body.textContent=text;else this.renderText(body,text,[...this.files.values()],()=>this.fullText(row));
+      if(activity)body.hidden=!text;
       more.hidden=detail?detail.next===null:!row.truncated;
       more.textContent=detail?timelineText('继续加载正文'):timelineText('展开完整内容');
     };

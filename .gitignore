@@ -19,3 +19,6 @@ __pycache__/
 node_modules/
 dist/
 *.spec
+
+# Local browser acceptance artifacts
+/output/playwright/

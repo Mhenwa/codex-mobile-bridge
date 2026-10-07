@@ -18,6 +18,33 @@ THREAD = "12345678-1234-1234-1234-123456789abc"
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_v140_model_and_paginated_skill_catalog_queries(self):
+        paths = [
+            f"/api/sessions/{THREAD}/catalog?kind=models",
+            f"/api/sessions/{THREAD}/catalog?kind=skills&q=search&offset=200&limit=200&id=skill-one&id=skill-two",
+            f"/api/sessions/{THREAD}/catalog?host=local&kind=skills&q=&offset=0&limit=200&refresh=true"
+            + "".join(f"&id=skill-{index}" for index in range(8)),
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertTrue(validate_request("GET", path, 0, "application/json"))
+
+    def test_catalog_repeats_only_selected_skill_ids_with_an_eight_item_cap(self):
+        catalog = f"/api/sessions/{THREAD}/catalog?"
+        paths = [
+            catalog + "kind=models&kind=skills",
+            catalog + "host=local&host=other",
+            catalog + "q=first&q=second",
+            catalog + "offset=0&offset=200",
+            catalog + "refresh=true&refresh=false",
+            catalog + "kind=skills&deviceId=other",
+            catalog + "&".join(f"id=skill-{index}" for index in range(9)),
+            f"/api/sessions/{THREAD}/poll?id=one&id=two",
+        ]
+        for path in paths:
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                validate_request("GET", path, 0, "application/json")
+
     def test_normal_operations_and_binary_upload(self):
         for method, path, size, mime in [
             ("GET", "/api/sessions?q=a%20b&offset=0", 0, "application/json"),
