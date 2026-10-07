@@ -1,0 +1,75 @@
+name: Publish verified desktop build
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Desktop builds run ID on main
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-verified-desktop-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate the completed source build
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+        run: |
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$RUNNER_TEMP/release-source.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID/jobs?per_page=100" > "$RUNNER_TEMP/release-jobs.json"
+          node .github/scripts/prepare-release.cjs validate "$RUNNER_TEMP/release-source.json" "$RUNNER_TEMP/release-jobs.json" "$GITHUB_REPOSITORY"
+      - name: Read the version from the source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/contents/package.json?ref=$SOURCE_COMMIT" --jq .content | base64 --decode > "$RUNNER_TEMP/release-package.json"
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run_id }}
+          pattern: desktop-*
+          merge-multiple: true
+          path: dist/release
+      - name: Prepare complete packages and fixed download names
+        id: packages
+        run: |
+          version=$(node -p 'require(process.env.RUNNER_TEMP + "/release-package.json").version')
+          node .github/scripts/prepare-release.cjs prepare dist/release "$RUNNER_TEMP/release-package.json" "docs/releases/v$version.md" "$RUNNER_TEMP/release-source.json" "$RUNNER_TEMP/release-plan.json" "$RUNNER_TEMP/release-body.md"
+      - name: Upload draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.packages.outputs.tag }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/release/* --target "$SOURCE_COMMIT" --draft --title "Codex Mobile Bridge $RELEASE_TAG · Mhenwa Connect" --notes-file "$RUNNER_TEMP/release-body.md"
+      - name: Verify uploaded files before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.packages.outputs.tag }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/uploaded-release.json"
+          node .github/scripts/prepare-release.cjs verify "$RUNNER_TEMP/release-plan.json" "$RUNNER_TEMP/uploaded-release.json"
+      - name: Publish the verified stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.packages.outputs.tag }}
+        run: |
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
