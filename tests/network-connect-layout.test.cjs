@@ -61,7 +61,11 @@ test('advanced settings text remains complete and migration guidance points to t
   assert.match(i18n,/"高级选项":"Advanced options"/);
 });
 
-test('computer registration button has a scoped gap after the computer-name field',()=>{
+test('Connect action buttons fill equal grid columns with a shared row gap',()=>{
   const css=fs.readFileSync(path.join(__dirname,'../desktop/shell/style.css'),'utf8');
-  assert.match(css,/#connect-register\s*\{[^}]*margin-top\s*:\s*16px(?:\s*;|\s*\})/);
+  assert.match(css,/#connect-content \.connect-actions \.actions\s*\{[^}]*display\s*:\s*grid/);
+  assert.match(css,/grid-template-columns\s*:\s*repeat\(5\s*,\s*minmax\(0\s*,\s*1fr\)\)/);
+  assert.match(css,/#connect-content \.connect-actions \.actions>button\s*\{[^}]*width\s*:\s*100%/);
+  assert.match(css,/#connect-content \.connect-actions \.actions>button\s*\{[^}]*min-height\s*:\s*42px/);
+  assert.match(css,/grid-template-columns\s*:\s*repeat\(2\s*,\s*minmax\(0\s*,\s*1fr\)\)/);
 });

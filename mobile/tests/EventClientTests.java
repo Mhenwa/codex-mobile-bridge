@@ -12,6 +12,9 @@ public final class EventClientTests {
   String origin="http://127.0.0.1:"+server.getAddress().getPort();
   AtomicReference<String> agent=new AtomicReference<>(""),mode=new AtomicReference<>("");
   CookieManager cookies=CookieManager.getInstance();
+  check(EventClient.sessionCookie("codex_mobile_session=legacy; mhenwa_connect_phone=phone").equals("mhenwa_connect_phone=phone"),"Connect cookie wins when an old desktop cookie is still present");
+  check(EventClient.sessionCookie("mhenwa_connect_phone=phone").equals("mhenwa_connect_phone=phone"),"Mhenwa Connect cookie is recognized");
+  check(EventClient.sessionCookie("codex_mobile_session=legacy").equals("codex_mobile_session=legacy"),"Desktop session cookie remains recognized");
   server.createContext("/api/",exchange->{
    agent.set(exchange.getRequestHeaders().getFirst("User-Agent"));
    int status=mode.get().equals("denied")?401:200;

@@ -7,6 +7,10 @@ import java.nio.charset.StandardCharsets;
 
 final class EventClient {
  static final String USER_AGENT="BridgeMobile/0.1-Android";
+ // The normal desktop gateway and Mhenwa Connect use independent cookie
+ // names. Keep the name together with the value so binding comparisons and
+ // renewal cannot accidentally treat one session as the other.
+ private static final String[] SESSION_COOKIE_NAMES={"mhenwa_connect_phone","codex_mobile_session"};
  static final class Read {
   private volatile boolean cancelled;
   private HttpURLConnection connection;
@@ -15,8 +19,21 @@ final class EventClient {
   void check()throws IOException {if(cancelled)throw new InterruptedIOException("Notification check cancelled");}
   void cancel(){HttpURLConnection current;synchronized(this){cancelled=true;current=connection;connection=null;}if(current!=null)current.disconnect();}
  }
- static String sessionCookie(String header){if(header!=null)for(String part:header.split(";"))if(part.trim().startsWith("codex_mobile_session="))return part.trim();return "";}
- static synchronized void forget(String origin){CookieManager store=CookieManager.getInstance();store.setCookie(origin+"/","codex_mobile_session=; Path="+GatewayURL.cookiePath(origin)+"; Max-Age=0");store.flush();}
+ static String sessionCookie(String header){
+  if(header==null||header.isEmpty())return "";
+  // Prefer the Connect cookie if both names are present. A relay origin
+  // should only issue one, but this prevents an old desktop cookie from
+  // masking an active phone authorization after an origin is reused.
+  for(String name:SESSION_COOKIE_NAMES)for(String part:header.split(";")){
+   String value=part.trim();if(value.startsWith(name+"=")&&value.length()>name.length()+1)return value;
+  }
+  return "";
+ }
+ static synchronized void forget(String origin){
+  CookieManager store=CookieManager.getInstance();String path=GatewayURL.cookiePath(origin);
+  for(String name:SESSION_COOKIE_NAMES)store.setCookie(origin+"/",name+"=; Path="+path+"; Max-Age=0");
+  store.flush();
+ }
  static synchronized void renew(HttpURLConnection connection,String origin,String sent){
   CookieManager store=CookieManager.getInstance();String previous=sessionCookie(sent);
   if(previous.isEmpty()||!previous.equals(sessionCookie(store.getCookie(origin+"/"))))return;

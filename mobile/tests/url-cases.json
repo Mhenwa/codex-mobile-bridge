@@ -13,6 +13,10 @@
       "https://codex.try2love.com/#pair=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     ],
     [
+      "https://codex.mhenwa.cc/#connect_pair=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "https://codex.mhenwa.cc/#connect_pair=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    ],
+    [
       "http://192.168.1.20:8791",
       "http://192.168.1.20:8791/"
     ],
@@ -89,6 +93,7 @@
     "https://codex.try2love.com/path",
     "https://codex.try2love.com/?token=secret",
     "https://codex.try2love.com/#pair=short",
+    "https://codex.mhenwa.cc/#connect_pair=short",
     "https://codex.try2love.com/#other=secret",
     "file:///etc/passwd",
     "javascript:alert(1)",

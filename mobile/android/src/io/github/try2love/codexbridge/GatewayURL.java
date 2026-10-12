@@ -21,7 +21,10 @@ public final class GatewayURL {
     }
     public static String connection(String value)throws Exception {
         String base=origin(value);String fragment=new URI(value.trim()).getRawFragment();
-        if(fragment!=null&&!fragment.isEmpty()&&!fragment.matches("pair=[A-Za-z0-9_-]{43}"))throw new Exception("请使用电脑网关提供的地址或二维码");
+        // The standard gateway pairing link uses #pair=; Mhenwa Connect uses
+        // the same one-use token shape under #connect_pair=. Both fragments
+        // are consumed by the gateway WebView before any network request.
+        if(fragment!=null&&!fragment.isEmpty()&&!fragment.matches("(?:pair|connect_pair)=[A-Za-z0-9_-]{43}"))throw new Exception("请使用电脑网关提供的地址或二维码");
         return base+"/"+(fragment==null?"":"#"+fragment);
     }
     public static String httpOrigin(String base){try{URI u=new URI(base);return u.getScheme()+"://"+u.getRawAuthority();}catch(Exception e){return "";}}

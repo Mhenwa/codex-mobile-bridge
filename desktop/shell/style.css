@@ -27,7 +27,10 @@ aside{overflow-y:auto}aside>nav,aside>footer{flex-shrink:0}@media(max-height:740
 .connection-card>summary::before,.connection-basic>summary::before{font-size:22px;line-height:1;min-width:24px;text-align:center}.connection-card>summary{min-height:36px}
 
 /* Mhenwa Connect stays additive to the upstream network shell. */
-#connect-register{margin-top:16px}
+#connect-content .connect-actions .actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:16px;align-items:stretch}
+#connect-content .connect-actions .actions>button{width:100%;min-width:0;min-height:42px;margin:0;padding:10px 8px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal}
+@media(max-width:760px){#connect-content .connect-actions .actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.connect-pairing-progress{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;color:var(--muted)}.connect-pairing-progress[hidden]{display:none}.connect-action-spinner{display:block;width:13px;height:13px;border:2px solid #d8dee8;border-top-color:var(--accent);border-radius:50%;animation:connect-spin .8s linear infinite}@keyframes connect-spin{to{transform:rotate(360deg)}}
 #connect-device.connect-device-registered{display:flex;align-items:flex-start;gap:12px;margin:16px 0 20px;padding:14px 16px;border:1px solid #86d9a4;border-left:4px solid #16a34a;border-radius:10px;background:#edf9f1;color:#166534;font-size:13px;font-weight:600;line-height:1.8;overflow-wrap:anywhere}
 #connect-device.connect-device-registered::before{content:"✓";display:flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;margin-top:1px;border-radius:50%;background:#16a34a;color:#fff;font:700 14px/1 sans-serif}
 #connect-qr{margin-top:14px}

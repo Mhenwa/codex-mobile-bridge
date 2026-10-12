@@ -42,11 +42,21 @@
     for(const row of pending){
       const item=document.createElement('div');item.className='address';
       item.append(text('strong',row.phoneName||'手机'));
-      item.append(actionButton('批准这台手机',async()=>{
+      const progress=document.createElement('span');progress.className='connect-pairing-progress';progress.hidden=true;progress.setAttribute('role','status');progress.setAttribute('aria-label','正在处理手机授权');
+      const spinner=document.createElement('span');spinner.className='connect-action-spinner';spinner.setAttribute('aria-hidden','true');progress.append(spinner);
+      let approve,reject;
+      const setProcessing=value=>{
+        progress.hidden=!value;
+        for(const control of [approve,reject])if(control){control.disabled=value;control.setAttribute('aria-busy',value?'true':'false');}
+      };
+      approve=actionButton('批准这台手机',async()=>{
         if(!window.confirm(`允许“${row.phoneName||'手机'}”查看聊天、发送任务、处理命令/文件确认？`))return;
-        await command({action:'approve',id:row.id,approved:true});note('已批准配对');await refresh();
-      }));
-      item.append(actionButton('拒绝',async()=>{await command({action:'approve',id:row.id,approved:false});note('已拒绝配对');await refresh();}));
+        setProcessing(true);
+        try{await command({action:'approve',id:row.id,approved:true});note('已批准配对');await refresh();}
+        finally{setProcessing(false);}
+      });
+      reject=actionButton('拒绝',async()=>{await command({action:'approve',id:row.id,approved:false});note('已拒绝配对');await refresh();});
+      item.append(approve,progress,reject);
       $('connect-pairings').append(item);
     }
   }

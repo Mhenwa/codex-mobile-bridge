@@ -19,7 +19,10 @@ enum GatewayURL {
     }
     static func connection(_ input: String) throws -> URL {
         let base = try origin(input), fragment = URLComponents(string: input.trimmingCharacters(in: .whitespacesAndNewlines))?.fragment
-        if let fragment, fragment.range(of: "^pair=[A-Za-z0-9_-]{43}$", options: .regularExpression) == nil { throw InvalidURL() }
+        // The standard gateway pairing link uses #pair=; Mhenwa Connect uses
+        // the same one-use token shape under #connect_pair=. Both fragments
+        // are consumed by the gateway WebView before any network request.
+        if let fragment, fragment.range(of: "^(pair|connect_pair)=[A-Za-z0-9_-]{43}$", options: .regularExpression) == nil { throw InvalidURL() }
         return URL(string: base + "/" + (fragment.map { "#" + $0 } ?? ""))!
     }
     static func httpOrigin(_ base: String) -> String {

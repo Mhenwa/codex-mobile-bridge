@@ -5,10 +5,11 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 function fixture(){
   const elements=new Map(),calls=[],copies=[];let observer,interval,now=1000000;
   class Node{
-    constructor(tag){this.tag=tag;this.children=[];this.hidden=false;this.value='';this.checked=false;this.textContent='';this.classList={toggle(){}};}
+    constructor(tag){this.tag=tag;this.children=[];this.hidden=false;this.value='';this.checked=false;this.disabled=false;this.textContent='';this.classList={toggle(){}};}
     append(...nodes){this.children.push(...nodes);if(this.tag==='select'&&this.children.length===1)this.value=nodes[0].value;}
     replaceChildren(...nodes){this.children=[...nodes];}
     removeAttribute(name){delete this[name];}
+    setAttribute(name,value){this[name]=String(value);}
   }
   const get=id=>{if(!elements.has(id))elements.set(id,new Node(id==='connect-provider'?'select':'div'));return elements.get(id);};
   const panel=new Node('section');panel.hidden=false;get('connect-name').value='Fixture computer';
@@ -73,6 +74,23 @@ test('paired phone is not auto-approved and explicit local approval uses exact c
   const approve=ui.get('connect-pairings').children[0].children[1];
   await approve.onclick();await settle();assert.equal(ui.calls.filter(value=>value.action==='approve').length,1);
   const request=ui.calls.find(value=>value.action==='approve');assert.equal(request.id,'fixture-pairing');assert.equal(request.approved,true);
+});
+
+test('pending phone approval shows a spinner and locks both decisions until IPC completes',async()=>{
+  const ui=fixture();ui.show();await settle();await settle();
+  const item=ui.get('connect-pairings').children[0],approve=item.children[1],progress=item.children[2],reject=item.children[3];
+  let release;
+  ui.context.window.bridgeDesktop.connect=async value=>{
+    ui.calls.push(value);
+    if(value.action==='approve')return new Promise(resolve=>{release=()=>resolve({ok:true});});
+    return ui.handlers[value.action]();
+  };
+  const pending=approve.onclick();await settle();
+  assert.equal(progress.hidden,false);
+  assert.equal(progress.children[0].className,'connect-action-spinner');
+  assert.equal(approve.disabled,true);assert.equal(reject.disabled,true);assert.equal(approve['aria-busy'],'true');
+  release();await pending;await settle();
+  assert.equal(progress.hidden,true);assert.equal(approve['aria-busy'],'false');
 });
 
 test('local confirmation cancellation blocks phone approval and revoke',async()=>{
