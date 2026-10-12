@@ -1,0 +1,200 @@
+'use strict';
+// Shared by the phone and desktop; only sanitized account data reaches this view.
+class AccountPanel {
+  constructor({root,button,status=null,read,consume,onHidden=()=>{},onConsumed=()=>{},visible=()=>false}){
+    Object.assign(this,{root,button,status,read,consume,onHidden,onConsumed,visible});
+    this.value=null;this.generation=0;this.busy=false;this.loading=false;this.checkedAt=0;
+    this.timer=null;this.countdownTimer=null;this.pending=null;this.message='';this.error='';
+  }
+  clear(){
+    this.confirmation?.cancel();
+    clearTimeout(this.timer);
+    clearTimeout(this.countdownTimer);this.countdownTimer=null;
+    this.loading=false;
+    this.generation++;this.value=null;this.pending=null;this.checkedAt=0;
+    this.root.replaceChildren();this.button.hidden=true;this.onHidden();
+    if(this.status)this.status.hidden=true;
+  }
+  schedule(){
+    clearTimeout(this.timer);
+    if(this.visible())this.timer=setTimeout(()=>{if(this.visible())this.refresh(false);},Math.max(0,300000-(Date.now()-this.checkedAt)));
+    if(!this.visible()){clearTimeout(this.countdownTimer);this.countdownTimer=null;this.confirmation?.cancel();}
+    else if(!this.countdownTimer)this.countdownTimer=setTimeout(()=>{this.countdownTimer=null;if(this.visible()){this.render();this.schedule();}},60000);
+  }
+  async refresh(refresh=true){
+    if(this.loading||this.busy)return;
+    const generation=this.generation;this.loading=true;this.render();
+    try{
+      const value=await this.read(refresh);
+      if(generation!==this.generation)return;
+      this.error='';this.accept(value);this.checkedAt=Date.now();
+    }catch(error){
+      if(generation!==this.generation)return;
+      // Retain a labeled snapshot, but never authorize a write from stale identity data.
+      this.checkedAt=Date.now();this.error=error.message;
+      if(this.value?.visible)this.value={...this.value,canReset:false,error:BridgeI18n.t('保留上次结果，数据尚未更新')};
+      else{this.value=null;this.root.replaceChildren(this.node('p',BridgeI18n.t('登录状态暂不可用'),'error'));}
+    }finally{if(generation===this.generation){this.loading=false;this.render();this.schedule();}}
+  }
+  accept(value){
+    if(!value?.visible||!value.canReset||value.error||this.value?.accountKey!==value.accountKey)this.confirmation?.cancel();
+    if(!value?.visible){
+      this.value=value;this.pending=null;this.message='';this.error='';
+      this.root.replaceChildren();this.button.hidden=true;this.onHidden();this.render();return;
+    }
+    if(this.value?.accountKey!==value.accountKey){this.pending=null;this.message='';this.error='';}
+    this.value=value;this.button.hidden=false;
+    this.pending=value.pendingReset||null;
+    this.render();
+  }
+  node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
+  time(value){return typeof value==='number'?new Date(value*1000).toLocaleString(BridgeI18n.locale()):BridgeI18n.t('暂未提供');}
+  duration(minutes){
+    const t=BridgeI18n.t;
+    if(typeof minutes!=='number'||minutes<=0)return t('额度窗口');
+    if(minutes%1440===0)return minutes/1440+t(' 天');
+    if(minutes%60===0)return minutes/60+t(' 小时');
+    return minutes+t(' 分钟');
+  }
+  countdown(minutes){
+    const t=BridgeI18n.t,days=Math.floor(minutes/1440),hours=Math.floor(minutes%1440/60),rest=minutes%60;
+    return [days?days+t(' 天'):'',hours?hours+t(' 小时'):'',rest?rest+t(' 分钟'):''].filter(Boolean).join(' ');
+  }
+  render(){
+    const value=this.value;
+    if(this.status){
+      this.status.hidden=!!value?.visible||(!value&&!this.loading);
+      this.status.textContent=BridgeI18n.t(this.loading&&!value?.visible?'正在读取登录状态…':
+        ({api:'API 接入',signedOut:'Codex 未登录',unknown:'登录状态未识别',unavailable:'登录状态暂不可用'}[value?.loginType]||'登录状态暂不可用'));
+    }
+    if(!value?.visible)return;
+    const t=BridgeI18n.t,root=this.root;root.replaceChildren();
+    const heading=this.node('div',undefined,'account-heading'),refresh=this.node('button',t('查看剩余额度'));
+    refresh.type='button';refresh.disabled=this.loading||this.busy;
+    refresh.onclick=()=>this.refresh();
+    heading.append(this.node('strong',value.email||t('ChatGPT 账号')),refresh);root.append(heading);
+    if(this.loading){const query=this.node('p',t('查询中…'),'account-query');query.setAttribute('role','status');root.append(query);}
+    root.append(this.node('p',t('此电脑 · 账号共享额度')+(value.planType?' · '+value.planType:''),'account-muted'));
+    if(value.error)root.append(this.node('p',t(value.error),'error'));
+    if(!value.limits.length&&!value.error)root.append(this.node('p',t('暂未提供额度信息'),'account-muted'));
+    for(const bucket of value.limits){
+      const card=this.node('section',undefined,'account-quota');card.append(this.node('h3',bucket.name));
+      if(!bucket.windows.length)card.append(this.node('p',t('暂未提供额度信息'),'account-muted'));
+      for(const window of bucket.windows){
+        const row=this.node('div',undefined,'account-window');
+        row.append(this.node('span',this.duration(window.windowDurationMins)),this.node('strong',window.remainingPercent==null?t('暂未提供'):t('剩余 ')+Math.round(window.remainingPercent*10)/10+'%'));
+        card.append(row);
+        if(window.remainingPercent!=null){const progress=this.node('progress');progress.max=100;progress.value=window.remainingPercent;progress.setAttribute('aria-label',t('剩余额度'));card.append(progress);}
+        let reset=t('恢复时间：')+this.time(window.resetsAt);
+        if(typeof window.resetsAt==='number'){
+          const minutes=Math.ceil((window.resetsAt*1000-Date.now())/60000);
+          reset+=' · '+(minutes>0?t('约 ')+this.countdown(minutes)+t('后恢复'):t('等待刷新'));
+        }
+        card.append(this.node('p',reset,'account-muted'));
+      }
+      if(bucket.credits)card.append(this.node('p','Credits: '+(bucket.credits.unlimited?t('不限量'):bucket.credits.balance??t('暂未提供')),'account-muted'));
+      root.append(card);
+    }
+    const period=value.subscription?.periodEndsAt,online=value.subscription?.source==='online';
+    if(Number.isFinite(period)&&(online||period>Date.now()/1000))root.append(this.node('p',t(online?'查询到的订阅周期截止日期：':'登录记录中的订阅日期（非实时）：')+this.time(period),'account-subscription'));
+    else root.append(this.node('p',t('订阅有效期暂未确认'),'account-subscription'));
+    if(value.subscription?.error)root.append(this.node('p',t(value.subscription.error),'account-muted'));
+    root.append(this.node('p',t(online?'订阅日期来自在线查询，续订与扣费状态请以 ChatGPT 订阅页面为准。':'登录记录可能滞后，请以 ChatGPT 订阅页面为准。'),'account-muted'));
+    const cards=value.resetCredits,section=this.node('section',undefined,'account-cards');
+    section.append(this.node('h3',t('重置卡')));
+    section.append(this.node('p',cards?.availableCount==null?t('暂未提供重置卡信息'):t('可用数量：')+cards.availableCount));
+    if(!value.canReset&&!value.error)section.append(this.node('p',t('此账号暂不可使用重置卡，请刷新后重试'),'account-muted'));
+    if(this.pending){
+      section.append(this.node('p',t('上次重置结果尚未确认，请重试原请求。')));
+      const retry=this.node('button',t('重试原请求'));retry.type='button';retry.disabled=this.busy||this.loading||!value.canReset;
+      retry.onclick=()=>this.redeem(this.pending.creditId,true);section.append(retry);
+    }else if(cards?.availableCount>0||cards?.credits?.length){
+      if(cards.credits===null){
+        const button=this.node('button',t('使用一张重置卡'));button.type='button';button.disabled=this.busy||this.loading||!value.canReset||!!value.error;
+        button.onclick=()=>this.redeem(null);section.append(button);
+      }else{
+        for(const card of [...(cards.credits||[])].sort((a,b)=>Number(this.canRedeem(b.id))-Number(this.canRedeem(a.id))||(a.expiresAt??Infinity)-(b.expiresAt??Infinity))){
+          const row=this.node('div',undefined,'account-card');
+          row.append(this.node('strong',card.title||t('重置卡')));
+          if(card.description)row.append(this.node('p',card.description,'account-muted'));
+          row.append(this.node('p',card.expiresAt==null?t('未提供到期时间'):t('到期时间：')+this.time(card.expiresAt),'account-muted'));
+          const expired=card.expiresAt!=null&&card.expiresAt*1000<=Date.now();
+          const button=this.node('button',t(expired?'已过期':card.status!=='available'?'不可用':'使用重置卡'));button.type='button';
+          button.disabled=this.busy||this.loading||!this.canRedeem(card.id);
+          button.onclick=()=>this.redeem(card.id);row.append(button);section.append(row);
+        }
+        if(!cards.credits.length)section.append(this.node('p',t('卡片详情暂不可用，请刷新后重试'),'account-muted'));
+      }
+    }
+    root.append(section);
+    if(this.message){const message=this.node('p',t(this.message));message.setAttribute('role','status');root.append(message);}
+    if(this.error){const error=this.node('p',t(this.error),'error');error.setAttribute('role','alert');root.append(error);}
+    root.append(this.node('p',t('更新于：')+this.time(value.updatedAt),'account-muted'));
+  }
+  requestId(){if(typeof crypto.randomUUID==='function')return crypto.randomUUID();const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const h=[...bytes].map(n=>n.toString(16).padStart(2,'0')).join('');return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);}
+  canRedeem(creditId,retry=false){
+    const value=this.value;
+    if(!value?.visible||!value.canReset||value.error)return false;
+    // An uncertain request must retain its original key, even if the card was consumed.
+    if(retry)return !!this.pending&&this.pending.accountKey===value.accountKey&&this.pending.creditId===creditId;
+    const cards=value.resetCredits;if(!(cards?.availableCount>0))return false;
+    if(creditId===null)return cards.credits===null;
+    return !!cards.credits?.some(card=>card.id===creditId&&card.status==='available'&&card.resetType==='codexRateLimits'&&(card.expiresAt==null||card.expiresAt*1000>Date.now()));
+  }
+  confirmReset(creditId,retry){
+    const t=BridgeI18n.t,value=this.value,accountKey=value.accountKey,generation=this.generation;
+    const card=value.resetCredits?.credits?.find(row=>row.id===creditId);
+    const dialog=this.node('dialog',undefined,'reset-confirmation');
+    dialog.setAttribute('aria-labelledby','reset-confirm-title');
+    const title=this.node('h2',t(retry?'确认重试同一次重置？':'确认使用一张重置卡？'));title.id='reset-confirm-title';
+    const cancel=this.node('button',t('取消')),confirm=this.node('button',undefined,'primary');
+    cancel.type=confirm.type='button';cancel.autofocus=true;confirm.disabled=true;
+    const actions=this.node('div',undefined,'reset-confirm-actions'),status=this.node('p',undefined,'account-muted');
+    status.setAttribute('role','status');
+    dialog.append(title,this.node('strong',value.email||t('ChatGPT 账号')),this.node('p',card?.title||t('重置卡')),
+      this.node('p',card?.expiresAt==null?t('未提供到期时间'):t('到期时间：')+this.time(card.expiresAt),'account-muted'),
+      this.node('p',t('成功后会消耗一张卡，重置符合条件的账号额度。')),status,actions);
+    actions.append(cancel,confirm);
+    const deadline=performance.now()+5000;
+    return new Promise(resolve=>{
+      let timer,settled=false;
+      const valid=()=>generation===this.generation&&this.value?.accountKey===accountKey&&this.canRedeem(creditId,retry)&&this.visible();
+      const finish=result=>{if(settled)return;settled=true;clearTimeout(timer);dialog.close();dialog.remove();this.confirmation=null;resolve(result);};
+      const tick=()=>{
+        if(!valid()){finish(false);return;}
+        const remaining=Math.max(0,Math.ceil((deadline-performance.now())/1000));
+        confirm.disabled=remaining>0;confirm.textContent=t(retry?'重试原请求':'使用重置卡')+(remaining?' ('+remaining+'s)':'');
+        status.textContent=t(remaining?'请核对账号和到期时间，等待五秒后可确认。':'可以确认使用，或取消返回。');
+        if(remaining)timer=setTimeout(tick,200);
+      };
+      this.confirmation={cancel:()=>finish(false)};
+      cancel.onclick=()=>finish(false);dialog.oncancel=event=>{event.preventDefault();finish(false);};dialog.onclose=()=>finish(false);
+      confirm.onclick=()=>{if(performance.now()<deadline)return;if(!valid()){finish(false);return;}finish(true);};
+      document.body.append(dialog);dialog.showModal();tick();
+    });
+  }
+  async redeem(creditId,retry=false){
+    if(this.busy||this.loading||this.confirmation||!this.canRedeem(creditId,retry))return;
+    const value=this.value,generation=this.generation;
+    const attempt=retry?this.pending:{requestId:this.requestId(),accountKey:value.accountKey,creditId};
+    if(!await this.confirmReset(creditId,retry))return;
+    if(generation!==this.generation||this.value?.accountKey!==attempt.accountKey||this.busy||this.loading||!this.canRedeem(creditId,retry))return;
+    this.pending=attempt;this.busy=true;this.message='';this.error='';this.render();
+    try{
+      const result=await this.consume({...attempt,confirmed:true});
+      if(generation!==this.generation)return;
+      this.pending=null;
+      this.accept(result.account);
+      if(this.value?.accountKey!==attempt.accountKey)return;
+      this.onConsumed(this.value);
+      this.message={reset:'已使用重置卡，额度已刷新',alreadyRedeemed:'此重置已完成，额度已刷新',nothingToReset:'当前没有可重置的额度窗口',noCredit:'当前没有可用重置卡'}[result.outcome]||'请刷新查看重置结果';
+    }catch(error){
+      if(generation!==this.generation)return;
+      this.error=error.message;
+      // Fetch the persisted attempt, retaining its key if the refresh also fails.
+      try{const latest=await this.read();if(generation===this.generation){this.pending=null;this.accept(latest);}}
+      catch{if(generation===this.generation)this.clear();}
+    }finally{this.busy=false;if(generation===this.generation)this.render();}
+  }
+}
+if(typeof module!=='undefined')module.exports={AccountPanel};

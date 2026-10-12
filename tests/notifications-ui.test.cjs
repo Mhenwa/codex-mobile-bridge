@@ -4,9 +4,9 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 
 // Run the actual phone handlers with an isolated DOM and notification API.
 async function fixture(){
-  const nodes=new Map(),saved=new Map(),writes=[];
-  const node=(tag='')=>({tagName:tag.toUpperCase(),children:[],value:'',checked:false,disabled:false,hidden:false,open:false,textContent:'',dataset:{},options:[],style:{},scrollTop:0,parentElement:{},
-    classList:{add(){},remove(){},toggle(){}},addEventListener(){},replaceChildren(...values){this.children=values;},append(...values){this.children.push(...values);},querySelectorAll(){return [];},querySelector(){return {disabled:false};},
+  const nodes=new Map(),saved=new Map(),writes=[],listRequests=[];
+  const node=(tag='')=>({tagName:tag.toUpperCase(),children:[],value:'',checked:false,disabled:false,hidden:false,open:false,textContent:'',dataset:{},options:[],style:{setProperty(k,v){this[k]=v;}},scrollTop:0,parentElement:{},listeners:{},
+    setAttribute(k,v){this[k]=v;},after(child){this.nextSibling=child;},getBoundingClientRect(){return {width:390,height:844};},classList:{add(){},remove(){},toggle(){},contains(){return false;}},addEventListener(type,listener){(this.listeners[type]??=[]).push(listener);},dispatchEvent(event){for(const listener of this.listeners[event.type]||[])listener(event);},replaceChildren(...values){this.children=values;},append(...values){this.children.push(...values);},querySelectorAll(){return [];},querySelector(){return {disabled:false};},
     showModal(){this.open=true;},close(){this.open=false;}});
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   for(const match of html.matchAll(/\bid="([^"]+)"/g))nodes.set(match[1],node());
@@ -15,7 +15,8 @@ async function fixture(){
   const archiveFilter={classList:{toggle:(name,enabled)=>archiveToggles.push([name,enabled])}};
   let nextPost;
   const response=(data,status=200)=>({ok:status===200,status,json:async()=>data});
-  const context=vm.createContext({document:{addEventListener(){},documentElement:{},getElementById:id=>nodes.get(id),querySelector:selector=>selector==='.archive-filter'?archiveFilter:{disabled:false},querySelectorAll:()=>[],createElement:node},
+  let listResponse=()=>response({sessions:[],unavailableHosts:[]});
+  const context=vm.createContext({ClientNavigation:class{constructor(){this.provider="codex";}async refresh(){}acknowledgeList(){}},DesktopSessionsView:class{clear(){}},Workbench:class{open(){}reset(){}setThumbnails(){}relabel(){}},navigator:{userAgent:'test'},document:{addEventListener(){},documentElement:{},getElementById:id=>nodes.get(id),querySelector:selector=>selector==='.archive-filter'?archiveFilter:{disabled:false},querySelectorAll:()=>[],createElement:node},
     renderMarkdown(){},window:{addEventListener(){}},localStorage:storage(),sessionStorage:storage(),
     location:{hash:'',pathname:'/',search:''},history:{replaceState(){}},setTimeout(){},clearTimeout(){},setInterval(){},
     ChatTimeline:class{constructor(){this.abort=new AbortController();}async start(){}dispose(){this.abort.abort();}relabel(){}},
@@ -23,7 +24,8 @@ async function fixture(){
       if(url.includes('/respond?')){writes.push({url,body:JSON.parse(options.body)});return response({status:'accepted'});}
       if(url==='/api/auth')return response({authenticated:false});
       if(url.includes('/reconnect'))return response({ok:true});
-      if(url==='/api/sessions?q=&offset=0&archived=false')return response({sessions:[],unavailableHosts:[]});
+      if(url.startsWith('/api/sessions?')){listRequests.push(url);return listResponse(url);}
+      if(url==='/api/activity')return response({sessions:[]});
       if(url.startsWith('/api/notifications/pushplus')||url.includes('/rename?')){
         if(options.method==='POST'){
           const body=JSON.parse(options.body);writes.push({url,body});
@@ -42,10 +44,10 @@ async function fixture(){
       }
       return response(saved.get(url)||{available:true,watching:false,notifyOnCompletion:false,requests:'inherit',completion:'inherit'});
     }});
-  for(const file of ['web/i18n.js','web/account.js','web/modes.js','web/attachments.js','web/activity.js','web/fast-mode.js','web/message-actions.js','web/app.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context);
+  for(const file of ['web/hosts/environment.js','web/shared/i18n.js','web/features/chat/list-sync.js','web/features/accounts/account.js','web/features/chat/modes.js','web/features/chat/attachments.js','web/features/chat/activity.js','web/features/chat/fast-mode.js','web/features/chat/message-actions.js','web/features/chat/permissions.js','web/shell/app.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context);
   await new Promise(setImmediate);
   const run=code=>vm.runInContext(code,context);
-  return {nodes,writes,saved,run,html,response,archiveToggles,setPost:handle=>{nextPost=handle;},
+  return {nodes,writes,saved,run,html,response,archiveToggles,listRequests,setList:handle=>{listResponse=handle;},setPost:handle=>{nextPost=handle;},
     async open(id='11111111-1111-4111-8111-111111111111',host='local'){
       await run(`openChat(${JSON.stringify(id)},${JSON.stringify(host)})`);await new Promise(setImmediate);
     },
@@ -197,4 +199,108 @@ test('accepted interaction bumps recent order while merely rendering does not',a
   assert.equal(ui.run('listRows[0].id'),'new');
   ui.run("bumpRecency('old','local',300)");assert.equal(ui.run('listRows[0].id'),'old');
   ui.run("bumpRecency('old','local',150)");assert.equal(ui.run('listRows[0].recency'),300);
+});
+
+const sessionPage=(start,count)=>({sessions:Array.from({length:count},(_,i)=>({id:'chat-'+(start+i),host:'local',title:'Chat '+(start+i),projectKey:'project',projectName:'Project',recency:10000-start-i})),unavailableHosts:[]});
+
+test('refresh retains unchanged chat nodes but renders title and selection updates',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');const first=root.children[0];
+  await ui.run('loadList(true)');assert.equal(root.children[0],first);
+  ui.run("listRows[0].title='Renamed';renderList()");assert.notEqual(root.children[0],first);assert.equal(root.children[0].children[0].textContent,'Renamed');
+  ui.run("currentId='chat-0';renderList()");assert.match(root.children[0].className,/selected/);
+  root.replaceChildren();ui.run('renderList()');assert.equal(root.children.length,100);
+});
+
+test('chat list scroll loads one page at a time, preserves position and stops at the end',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  Object.assign(root,{clientHeight:400,scrollHeight:12000});
+  const replace=root.replaceChildren;root.replaceChildren=function(...items){replace.apply(this,items);this.scrollTop=0;};
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');
+  assert.equal(ui.nodes.has('more'),false);assert.equal(ui.listRequests.length,1);
+  root.scrollTop=600;root.dispatchEvent({type:'scroll'});assert.equal(ui.listRequests.length,1);
+  let finish;ui.setList(()=>new Promise(resolve=>{finish=resolve;}));root.scrollTop=11500;
+  for(let i=0;i<5;i++)root.dispatchEvent({type:'scroll'});
+  assert.equal(ui.listRequests.length,2);assert.match(ui.listRequests[1],/offset=100/);
+  finish(ui.response(sessionPage(100,20)));await new Promise(setImmediate);
+  assert.equal(root.children.length,120);assert.equal(root.scrollTop,11500);
+  root.dispatchEvent({type:'scroll'});await new Promise(setImmediate);assert.equal(ui.listRequests.length,2);
+});
+
+test('failed continuation retains rows and retries the same page on a new scroll',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  Object.assign(root,{clientHeight:400,scrollHeight:12000});
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');
+  ui.setList(()=>ui.response({error:'Offline'},503));root.scrollTop=11500;root.dispatchEvent({type:'scroll'});await new Promise(setImmediate);
+  assert.equal(root.children.length,100);assert.equal(ui.nodes.get('toast').textContent,'Offline');assert.equal(ui.listRequests.length,2);
+  ui.setList(()=>ui.response(sessionPage(100,10)));root.dispatchEvent({type:'scroll'});await new Promise(setImmediate);
+  assert.equal(ui.listRequests[2],ui.listRequests[1]);assert.equal(root.children.length,110);
+});
+
+test('failed refresh keeps the loaded page available for scroll continuation',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  Object.assign(root,{clientHeight:400,scrollHeight:12000});
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');
+  ui.setList(()=>ui.response({error:'Offline'},503));await assert.rejects(ui.run('loadList(true)'),/Offline/);
+  assert.equal(root.children.length,100);
+  ui.setList(()=>ui.response(sessionPage(100,20)));root.scrollTop=11500;root.dispatchEvent({type:'scroll'});await new Promise(setImmediate);
+  assert.match(ui.listRequests[2]||'',/offset=100/);assert.equal(root.children.length,120);
+});
+
+test('new filters start at the top, including a retry after their first request fails',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  Object.assign(root,{clientHeight:400,scrollHeight:12000});
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');root.scrollTop=9000;
+  await ui.run('loadList(true)');assert.equal(root.scrollTop,9000);
+  ui.nodes.get('search').value='new';ui.setList(()=>ui.response({error:'Offline'},503));
+  await assert.rejects(ui.run('loadList(true)'),/Offline/);
+  root.dispatchEvent({type:'scroll'});assert.equal(ui.listRequests.length,3);
+  ui.setList(()=>ui.response(sessionPage(200,20)));await ui.run('loadList(true)');assert.equal(root.scrollTop,0);
+  root.scrollTop=1200;ui.nodes.get('archived').checked=true;await ui.run('loadList(true)');assert.equal(root.scrollTop,0);
+});
+
+test('horizontal, cancelled and multi-touch gestures do not load a page',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  Object.assign(root,{clientHeight:400,scrollHeight:200});
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');
+  for(const kind of ['horizontal','cancel','multi']){
+    root.dispatchEvent({type:'touchstart',touches:[{clientX:20,clientY:100}]});
+    if(kind==='horizontal')root.dispatchEvent({type:'touchmove',touches:[{clientX:220,clientY:50}]});
+    if(kind==='cancel')root.dispatchEvent({type:'touchcancel',touches:[]});
+    if(kind==='multi')root.dispatchEvent({type:'touchmove',touches:[{clientX:20,clientY:50},{clientX:40,clientY:50}]});
+    root.dispatchEvent({type:'touchmove',touches:[{clientX:20,clientY:40}]});
+    root.dispatchEvent({type:'touchend',touches:[]});
+  }
+  await new Promise(setImmediate);assert.equal(ui.listRequests.length,1);
+});
+
+test('changed search and archive conditions block old continuation and discard its late response',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  Object.assign(root,{clientHeight:400,scrollHeight:12000});
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');root.scrollTop=11500;
+  ui.nodes.get('search').value='new';root.dispatchEvent({type:'scroll'});assert.equal(ui.listRequests.length,1);
+  ui.nodes.get('search').value='';ui.nodes.get('archived').checked=true;root.dispatchEvent({type:'scroll'});assert.equal(ui.listRequests.length,1);
+  ui.nodes.get('archived').checked=false;
+  let finish;ui.setList(()=>new Promise(resolve=>{finish=resolve;}));root.dispatchEvent({type:'scroll'});
+  ui.nodes.get('search').value='new';ui.nodes.get('archived').checked=true;
+  ui.setList(()=>ui.response(sessionPage(200,2)));await ui.run('loadList(true)');
+  assert.match(ui.listRequests[2],/q=new&offset=0&archived=true/);
+  finish(ui.response(sessionPage(100,100)));await new Promise(setImmediate);
+  assert.equal(root.children.length,2);assert.equal(root.children[0].dataset.id,'chat-200');
+  root.dispatchEvent({type:'scroll'});assert.equal(ui.listRequests.length,3);
+});
+
+test('downward gestures load more when collapsed projects cannot scroll, without loading while hidden',async()=>{
+  const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
+  Object.assign(root,{clientHeight:400,scrollHeight:200});
+  ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');
+  ui.nodes.get('app').hidden=true;root.dispatchEvent({type:'wheel',deltaY:100});assert.equal(ui.listRequests.length,1);
+  ui.nodes.get('app').hidden=false;ui.run("clientNavigation.provider='claude'");root.dispatchEvent({type:'scroll'});assert.equal(ui.listRequests.length,1);
+  ui.run("clientNavigation.provider='codex'");root.dispatchEvent({type:'wheel',deltaY:-100});assert.equal(ui.listRequests.length,1);
+  ui.setList(()=>ui.response(sessionPage(100,100)));root.dispatchEvent({type:'wheel',deltaY:100});await new Promise(setImmediate);
+  assert.equal(ui.listRequests.length,2);assert.equal(root.children.length,200);
+  ui.setList(()=>ui.response(sessionPage(200,1)));
+  root.dispatchEvent({type:'touchstart',touches:[{clientY:100,clientX:20}]});
+  root.dispatchEvent({type:'touchmove',touches:[{clientY:40,clientX:20}]});await new Promise(setImmediate);
+  assert.equal(ui.listRequests.length,3);assert.match(ui.listRequests[2],/offset=200/);assert.equal(root.children.length,201);
 });

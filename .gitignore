@@ -20,5 +20,8 @@ node_modules/
 dist/
 *.spec
 
-# Local browser acceptance artifacts
-/output/playwright/
+# Local native push platform credentials
+/mobile/android-push/google-services.json
+/mobile/android-push/.gradle/
+/mobile/android-push/build/
+/mobile/android-push/local.properties
