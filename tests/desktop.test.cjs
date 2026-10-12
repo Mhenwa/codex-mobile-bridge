@@ -79,6 +79,7 @@ async function renderer(initialLanguage='zh-CN',{autoStart=false,hidden=false,lo
     classList:{toggle(){}},click(){return this.onclick?.();},append(...items){this.children=(this.children||[]).concat(items);},replaceChildren(...items){this.children=items;},setAttribute(){},removeAttribute(){},querySelectorAll(){return [];}};}
   const html=fs.readFileSync(path.join(__dirname,'../desktop/index.html'),'utf8');
   for(const match of html.matchAll(/\bid="([^"]+)"/g))nodes.set(match[1],node());
+  nodes.get('network-advanced').open=false;
   for(const id of ['clients-start','clients-stop'])nodes.set(id,node());
   const value={loginStartup,runtime:{running:false,portOccupied:false,supportsNotifications:true},
     preferences:{port:8787,lan:true,tunnel:false,autoStart,connections:[]},
@@ -398,7 +399,7 @@ test('legacy Connect tab navigation aliases the Network page',async()=>{
   const ui=await renderer();
   ui.context.tab('connect');
   assert.equal(ui.run('activeTab'),'network');
-  assert.equal(ui.nodes.get('page-title').textContent,'网络与登录');
+  assert.equal(ui.nodes.get('page-title').textContent,'网络访问');
 });
 
 test('opening logs starts at the newest records without changing their contents',async()=>{

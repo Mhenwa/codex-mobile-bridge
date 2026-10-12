@@ -5,28 +5,6 @@
   const api=window.bridgeDesktop,$=id=>document.getElementById(id);
   const panel=document.querySelector('[data-panel="network"]');
   if(!panel||!api?.connect)return;
-  // The upstream desktop shell does not know about the Mhenwa-specific
-  // companion panel. Create it here so the Connect surface stays additive and
-  // the upstream network settings remain untouched.
-  if(!$('connect-actions')){
-    const article=document.createElement('article');
-    article.innerHTML=`<h2>中转站远程连接（Mhenwa Connect）</h2>
-      <p class="hint">连接到固定的 Mhenwa 中转站，让自己的手机继续使用本机 Codex 网关。密钥和设备令牌只在本机保存。</p>
-      <form id="connect-actions" novalidate>
-        <div class="two fields"><label><span>提供商</span><select id="connect-provider"></select></label>
-        <label><span>设备名称</span><input id="connect-name" value="桌面电脑" maxlength="80"></label></div>
-        <div class="actions"><button id="connect-discover" type="button">检测 Mhenwa 配置</button>
-          <button id="connect-register" class="primary" type="button">注册此电脑</button>
-          <button id="connect-pair" type="button">生成手机配对链接</button>
-          <button id="connect-disable" type="button">关闭远程连接</button>
-          <button id="connect-refresh" type="button">刷新状态</button></div>
-      </form>
-      <p id="connect-state" role="status"></p><p id="connect-device" class="mono"></p>
-      <p id="connect-feedback" class="hint" role="status"></p>
-      <div id="connect-qr" hidden><img id="connect-qr-image" alt="手机配对二维码"><label><span>配对链接</span><input id="connect-pair-link" readonly></label><button id="connect-copy-link" type="button" disabled>复制配对链接</button></div>
-      <h3>待批准手机</h3><div id="connect-pairings"></div><h3>已授权手机</h3><div id="connect-phones"></div>`;
-    panel.append(article);
-  }
   $('connect-actions').onsubmit=event=>event.preventDefault();
   let current=null,busy=false,polling=false,grantExpires=0,grantUrl='';
   const text=(tag,value)=>{const node=document.createElement(tag);node.textContent=String(value??'');return node;};
