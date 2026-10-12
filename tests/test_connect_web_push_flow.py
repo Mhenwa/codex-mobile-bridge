@@ -15,8 +15,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from bridge.connect import ConnectController, notification_identity, private_json, read_config
-from bridge.notifications import Notifications
-from bridge.service import LiveSession
+from bridge.features.notifications.channels import Notifications
+from bridge.app.service import LiveSession
 from connect.relay import COOKIE, STATE, create_app
 
 THREAD = '12345678-1234-1234-1234-123456789abc'
@@ -92,7 +92,7 @@ class WebPushFlowTests(unittest.IsolatedAsyncioTestCase):
                 manager.defaults({'requests': False, 'completion': False})
                 controller = ConnectController(data, relay_url=origin, allow_loopback=True)
                 identity = lambda path: notification_identity(read_config(path), origin)
-                with patch('bridge.notifications.connect_destination', side_effect=identity), \
+                with patch('bridge.features.notifications.channels.connect_destination', side_effect=identity), \
                         patch('bridge.connect.ConnectController', return_value=controller):
                     await asyncio.to_thread(manager.scan)
                     await relay.push.deliver(relay.check_qualification)

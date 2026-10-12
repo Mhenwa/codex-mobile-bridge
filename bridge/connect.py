@@ -25,7 +25,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHandler
 
-from .tls import client_context
+from bridge.features.auth.tls import client_context
 
 DEFAULT_RELAY = 'https://codex.mhenwa.cc'
 CONNECT_USER_AGENT = 'MhenwaConnect/1.4.0'
@@ -535,7 +535,7 @@ def start_companion(data_dir, gateway):
     """Use a separate authenticated loopback listener, also when LAN auth is off."""
     if not enabled(data_dir):
         return None
-    from .httpd import GatewayServer
+    from bridge.api.httpd import GatewayServer
     config = {'auth': {'mode': 'password', 'sessionHours': 1}, 'origins': [], 'localAccess': True}
     local = GatewayServer(('127.0.0.1', 0), gateway.bridge, config, gateway.web_dir)
     local.notifications = gateway.notifications

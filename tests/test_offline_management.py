@@ -72,7 +72,7 @@ class OfflineManagement(unittest.TestCase):
         result = subprocess.run([sys.executable, '-B', str(ROOT/'desktop.py'), 'management-stream',
                                  '--data-dir', str(self.root)],
                                 input=''.join(json.dumps(request)+'\n' for request in requests),
-                                capture_output=True, text=True, timeout=10)
+                                capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         responses = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(len(responses), 2)

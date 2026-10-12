@@ -25,3 +25,6 @@ dist/
 /mobile/android-push/.gradle/
 /mobile/android-push/build/
 /mobile/android-push/local.properties
+
+# Local browser acceptance artifacts
+/output/playwright/

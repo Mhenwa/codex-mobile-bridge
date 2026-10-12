@@ -183,7 +183,7 @@ def connect_destination(data_dir):
         config = read_json(Path(data_dir)/'connect.json', {})
         if not isinstance(config, dict) or config.get('enabled') is not True:
             return None
-        from .connect import notification_identity, read_config
+        from bridge.connect import notification_identity, read_config
         return notification_identity(read_config(data_dir))
     except (OSError, ValueError):
         # A damaged optional companion configuration must not disable ntfy/Bark.
@@ -492,9 +492,11 @@ class Notifications:
         provider = self.desktop_provider(row['host'])
         if provider and (self.desktop_sessions is None or not self.desktop_sessions.enabled(provider)):
             return False
-        current = self._effective(row)
+        current = self._effective(row, target=target)
         if not current['notifyOnCompletion' if completed else 'notifyOnRequest']:
             return False
+        if channel == 'connect':
+            return self._send_connect(row, target, pending, completed, now)
         provider = self.desktop_provider(row['host'])
         client = {'claude': 'Claude', 'deepseek': 'DSH'}.get(provider, 'Codex')
         heading = client + (' 运行已完成' if completed else ' 需要你的确认')
@@ -518,7 +520,7 @@ class Notifications:
         return True
 
     def _send_connect(self, row, target, pending, completed, now):
-        from .connect import ConnectController
+        from bridge.connect import ConnectController
         changed = False
         for key in pending:
             if self.closed.is_set() or connect_destination(self.data_dir) != target:
@@ -555,6 +557,10 @@ class Notifications:
     def scan(self):
         config = settings(self.data_dir)
         targets = self._targets(config)
+        connect = connect_destination(self.data_dir)
+        if connect:
+            targets['connect'] = connect
+        self.connect_budget = 32
         signature = tuple(sorted(targets.items()))
         if signature != self.target_signature:
             self.candidates.update({key: {'host': key[0], 'id': key[1]} for key in self.dormant})
@@ -582,7 +588,8 @@ class Notifications:
                 provider = self.desktop_provider(host)
                 if provider and (self.desktop_sessions is None or not self.desktop_sessions.enabled(provider)):
                     continue
-                if target not in targets.values() or not self._effective(row, policies, legacy_rows)['notifyOnCompletion']:
+                if (target not in targets.values()
+                        or not self._effective(row, policies, legacy_rows, target=target)['notifyOnCompletion']):
                     del self.completions[key]
                     write_json(self.data_dir/'notification-completions.json', self.completions)
                     continue
@@ -679,8 +686,10 @@ class Notifications:
                 break
             if not manager.enabled(row['provider']):
                 continue
-            current = self._effective(row)
-            if not (current['notifyOnRequest'] or current['notifyOnCompletion']):
+            enabled_targets = [target for target in targets.values()
+                               if self._effective(row, target=target)['notifyOnRequest']
+                               or self._effective(row, target=target)['notifyOnCompletion']]
+            if not enabled_targets:
                 continue
             title = row.get('title') or '聊天'
             requests = [r for r in row.get('requests', []) if isinstance(r, dict) and r.get('id')]
@@ -689,7 +698,9 @@ class Notifications:
             for channel, target in targets.items():
                 keys = [self._delivery_key(row, r['id'], target=target) for r in requests]
                 changed = self._send_keys(config, row, title, channel, target, keys, False) or changed
-            if not current['notifyOnCompletion']:
+            completion_targets = [target for target in targets.values()
+                                  if self._effective(row, target=target)['notifyOnCompletion']]
+            if not completion_targets:
                 continue
             key = (row['host'], row['id'])
             signature = (row.get('updatedAt'), row.get('status'))
@@ -707,7 +718,9 @@ class Notifications:
                 except (OSError, ValueError):
                     continue
             for channel, target in targets.items():
-                keys = self._completion_pending({**current, 'title': title}, cached[1], target)
+                if target not in completion_targets:
+                    continue
+                keys = self._completion_pending({**row, 'title': title}, cached[1], target)
                 changed = self._send_keys(config, row, title, channel, target, keys, True) or changed
         return changed
 

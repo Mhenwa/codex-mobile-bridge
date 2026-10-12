@@ -74,7 +74,7 @@ class LocalAccessTests(unittest.TestCase):
     def test_fresh_desktop_blocks_local_browser_before_any_save(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'.tmp') as folder:
             desktop = Desktop(folder)
-            server = GatewayServer(('127.0.0.1', 0), object(), desktop.config(), ROOT/'web', Path(folder))
+            server = GatewayServer(('127.0.0.1', 0), SimpleNamespace(accounts=SimpleNamespace()), desktop.config(), ROOT/'web', Path(folder))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
@@ -88,7 +88,7 @@ class LocalAccessTests(unittest.TestCase):
                     finally:
                         conn.close()
             finally:
-                server.shutdown();thread.join();server.server_close()
+                server.shutdown();thread.join();server.desktop_sessions.close();server.server_close()
 
     def test_local_browser_blocked_but_private_health_and_tunnel_work(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'.tmp') as folder:

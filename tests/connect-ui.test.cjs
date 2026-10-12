@@ -197,7 +197,7 @@ test('Connect desktop IPC is local-only and worker allowlist is explicit',()=>{
   assert.match(main,/ipcMain\.handle\('bridge:connect',[\s\S]*?authorize\(event\)/);
   const preload=fs.readFileSync(path.join(__dirname,'../desktop/preload.cjs'),'utf8');
   assert.match(preload,/connect:value=>ipcRenderer\.invoke\('bridge:connect',value\)/);
-  assert.match(fs.readFileSync(path.join(__dirname,'../desktop/controller.cjs'),'utf8'),/'pairing','connect'/);
+  assert.match(fs.readFileSync(path.join(__dirname,'../desktop/shared/controller.cjs'),'utf8'),/'pairing','connect'/);
 });
 
 test('fork desktop project links stay on Mhenwa repository',()=>{

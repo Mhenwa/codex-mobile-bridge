@@ -261,6 +261,22 @@ def main(connections=None, connection_secrets=None):
             listener.connection_discovery = discovery
         notifications.start()
         address_notifications.start()
+        # Mhenwa Connect is an optional companion on top of the local fixed
+        # server.  Keep it isolated from the upstream shared relay: a broken
+        # registration or relay must never prevent the local gateway from
+        # serving fixed-server users.
+        connect_path = args.config.parent / 'connect.json'
+        if connect_path.is_file():
+            from bridge.connect import enabled, private_json, start_companion
+            try:
+                if enabled(args.config.parent):
+                    connect_companion = start_companion(args.config.parent, server)
+            except (OSError, ValueError, KeyError) as exc:
+                private_json(args.config.parent / 'connect-status.json', {
+                    'state': 'unavailable',
+                    'error': str(exc)[:240],
+                })
+                print('Mhenwa Connect 未启动，请在桌面端检查注册；本地网关仍可使用。', flush=True)
         bridge.accounts.monitor.start()
         control.start(server.shutdown, server.pairing.control, server.instance_id, server.auth, bridge.account.control, server.notifications.control, bridge.accounts.control, server.harness.control, server.desktop_sessions.control)
         for listener in servers[1:]:

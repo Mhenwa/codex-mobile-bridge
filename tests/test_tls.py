@@ -11,6 +11,7 @@ from urllib.error import URLError
 
 from bridge.features.network.access import read_auth
 from bridge.features.notifications.channels import publish
+from bridge.connect import ConnectController
 import bridge.features.auth.tls as tls
 
 ROOT = Path(__file__).resolve().parents[1]

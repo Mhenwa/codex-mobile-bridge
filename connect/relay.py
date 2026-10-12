@@ -509,10 +509,11 @@ class Relay:
                     del mapping[key]
 
     async def static(self, request):
-        from bridge.httpd import FONT_ROUTE, STATIC
+        from bridge.api.assets import FONT_ROUTE, STATIC, asset_bytes
         if request.method != "GET":
             raise web.HTTPMethodNotAllowed(request.method, ["GET"])
         path = request.path
+        body = None
         if path in {"/", "/connect/"}:
             phone = self.registry.phone(request.cookies.get(COOKIE, ""))
             if phone and path == "/":
@@ -529,13 +530,19 @@ class Relay:
             file = self.landing_dir / path.rsplit("/", 1)[1]
             content_type = "text/javascript" if path.endswith(".js") else "text/css"
         elif path in STATIC:
-            filename, content_type = STATIC[path]
-            file = self.web_dir / filename
+            _, content_type = STATIC[path]
+            try:
+                body = asset_bytes(self.web_dir, path)
+            except (FileNotFoundError, OSError, KeyError):
+                raise web.HTTPNotFound() from None
         else:
             match = FONT_ROUTE.fullmatch(path)
             if not match:
                 raise web.HTTPNotFound()
             file, content_type = self.web_dir / "vendor" / "katex" / "fonts" / match[1], "font/" + match[2]
+        if body is not None:
+            headers = {"Content-Type": content_type}
+            return web.Response(body=body, headers=headers)
         if not file.is_file():
             raise web.HTTPNotFound()
         headers = {"Content-Type": content_type}

@@ -1,2 +1,4 @@
-# Optional source dependency; bundled in desktop builds for shared relay access.
-aiohttp==3.13.3
+# Public Mhenwa Connect relay dependencies.
+# Keep the relay and desktop companion on the same aiohttp version.
+-r requirements-connect.txt
+pywebpush==2.5.0

@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from bridge.connect import ConnectController, DEFAULT_RELAY, notification_identity
-from bridge.notifications import Notifications, read_json, save_settings, write_json
-from bridge.service import LiveSession
+from bridge.features.notifications.channels import Notifications, read_json, save_settings, write_json
+from bridge.app.service import LiveSession
 
 ROOT = Path(__file__).resolve().parents[1]
 THREAD = '11111111-1111-4111-8111-111111111111'
@@ -82,9 +82,9 @@ class ConnectNotificationTests(unittest.TestCase):
     def test_pending_approval_without_web_viewers_or_legacy_channels(self):
         self.request()
         with patch.object(ConnectController, 'request', return_value={'ok': True, 'accepted': 1}) as send, \
-                patch('bridge.notifications.publish') as ntfy, \
-                patch('bridge.notifications.publish_bark') as bark, \
-                patch('bridge.notifications.publish_pushplus') as pushplus:
+                patch('bridge.features.notifications.channels.publish') as ntfy, \
+                patch('bridge.features.notifications.channels.publish_bark') as bark, \
+                patch('bridge.features.notifications.channels.publish_pushplus') as pushplus:
             self.manager.scan(); self.manager.scan()
             send.assert_called_once()
             self.assertEqual(self.event(send)['kind'], 'request')
@@ -232,7 +232,7 @@ class ConnectNotificationTests(unittest.TestCase):
         save_settings(self.directory, {'enabled': True, 'topic': 'fixture'})
         self.manager.policy(THREAD, 'local', {'requests': 'on', 'completion': 'off'})
         with patch.object(ConnectController, 'request', side_effect=OSError('offline')) as connect, \
-                patch('bridge.notifications.publish') as ntfy:
+                patch('bridge.features.notifications.channels.publish') as ntfy:
             self.manager.scan(); connect.assert_called_once(); ntfy.assert_called_once()
             self.assertEqual(self.manager.connect_budget, 0)
             for row in self.manager.ledger.values(): row['next'] = 0
@@ -250,21 +250,21 @@ class ConnectNotificationTests(unittest.TestCase):
                 self.source.changes = [{'host': 'local', 'id': THREAD}]
                 self.session.state['requests'] = []
                 self.session.state['turns'] = [{'turnId': 'expiry-run', 'status': 'inProgress'}]
-                with patch('bridge.notifications.time.time', return_value=10000):
+                with patch('bridge.features.notifications.channels.time.time', return_value=10000):
                     self.manager.scan()
                 if completed:
                     self.session.state['turns'][-1]['status'] = 'completed'
                 else:
                     self.request('expiring-request')
-                with patch('bridge.notifications.time.time', return_value=10000), \
+                with patch('bridge.features.notifications.channels.time.time', return_value=10000), \
                         patch.object(ConnectController, 'request', side_effect=OSError('offline')) as send:
                     self.manager.scan(); send.assert_called_once()
                 for row in self.manager.ledger.values(): row['next'] = 0
-                with patch('bridge.notifications.time.time', return_value=10000+ttl-1), \
+                with patch('bridge.features.notifications.channels.time.time', return_value=10000+ttl-1), \
                         patch.object(ConnectController, 'request', side_effect=OSError('offline')) as send:
                     self.manager.scan(); send.assert_called_once()
                 for row in self.manager.ledger.values(): row['next'] = 0
-                with patch('bridge.notifications.time.time', return_value=10000+ttl), \
+                with patch('bridge.features.notifications.channels.time.time', return_value=10000+ttl), \
                         patch.object(ConnectController, 'request') as send:
                     self.manager.scan(); send.assert_not_called()
                 records = list(read_json(self.directory/'notification-delivery.json', {}).values())
@@ -274,7 +274,7 @@ class ConnectNotificationTests(unittest.TestCase):
                 self.source.changes = [{'host': 'local', 'id': THREAD}]
                 restarted = Notifications(self.source, self.directory)
                 self.addCleanup(restarted.close)
-                with patch('bridge.notifications.time.time', return_value=10000+ttl+1), \
+                with patch('bridge.features.notifications.channels.time.time', return_value=10000+ttl+1), \
                         patch.object(ConnectController, 'request') as send:
                     restarted.scan(); send.assert_not_called()
 
@@ -295,7 +295,7 @@ class ConnectNotificationTests(unittest.TestCase):
         self.request()
         save_settings(self.directory, {'enabled': True, 'topic': 'fixture'})
         with patch.object(ConnectController, 'request', return_value={'ok': True, 'accepted': 1}) as connect, \
-                patch('bridge.notifications.publish') as ntfy:
+                patch('bridge.features.notifications.channels.publish') as ntfy:
             self.manager.scan(); connect.assert_called_once(); ntfy.assert_not_called()
             self.manager.policy(THREAD, 'local', {'requests': 'on', 'completion': 'off'})
             self.manager.scan(); connect.assert_called_once(); ntfy.assert_called_once()
@@ -306,7 +306,7 @@ class ConnectNotificationTests(unittest.TestCase):
         self.manager.policy(THREAD, 'local', {'requests': 'on', 'completion': 'off'})
         (self.directory/'connect.json').write_text('{invalid', encoding='utf-8')
         with patch.object(ConnectController, 'request') as connect, \
-                patch('bridge.notifications.publish') as ntfy:
+                patch('bridge.features.notifications.channels.publish') as ntfy:
             self.manager.scan(); connect.assert_not_called(); ntfy.assert_called_once()
 
     def test_controller_validates_payload_response_and_device_auth(self):

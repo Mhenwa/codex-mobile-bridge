@@ -20,7 +20,7 @@ from aiohttp import web
 from bridge.connect import (ConnectController, ConnectError, Connector, NoRedirect, enabled,
                             MAX_CONTROL_RESPONSE, private_json, read_config, relay_origin,
                             start_companion, stop_companion)
-from bridge.httpd import GatewayServer
+from bridge.api.httpd import GatewayServer
 
 ROOT = Path(__file__).resolve().parents[1]
 KEY = 'fixture-model-key-never-a-device-password'
@@ -159,7 +159,7 @@ class ControllerTests(unittest.TestCase):
         self.configured()
         with patch.object(self.controller, 'request', side_effect=ValueError('offline')):
             self.controller.control({'action': 'disable'})
-        with patch('bridge.httpd.GatewayServer') as listener, patch.object(Connector, 'start') as transport:
+        with patch('bridge.api.httpd.GatewayServer') as listener, patch.object(Connector, 'start') as transport:
             self.assertIsNone(start_companion(self.directory, Mock()))
             listener.assert_not_called()
             transport.assert_not_called()
@@ -588,7 +588,7 @@ class LifecycleTests(unittest.TestCase):
             gateway.auth.new_session.assert_not_called()
 
     def test_disabled_companion_does_not_create_listener_or_import_aiohttp(self):
-        with tempfile.TemporaryDirectory() as directory, patch('bridge.httpd.GatewayServer') as listener:
+        with tempfile.TemporaryDirectory() as directory, patch('bridge.api.httpd.GatewayServer') as listener:
             self.assertIsNone(start_companion(directory, Mock()))
             listener.assert_not_called()
 

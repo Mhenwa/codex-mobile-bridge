@@ -18,6 +18,9 @@
     "build:linux": "electron-builder --linux AppImage deb --publish never",
     "test:linux-app": "node scripts/smoke-linux.cjs",
     "test:pairing": "electron scripts/smoke-pairing.cjs",
+    "test:connect": "python -m unittest discover -s tests -p test_connect*.py && node --test tests/web-push.test.cjs",
+    "test:web-push": "python -m unittest discover -s tests -p test_connect*.py && node --test tests/web-push.test.cjs",
+    "test:web-push-browser": "node scripts/smoke-web-push.cjs",
     "test:updater": "node --test tests/updater.test.cjs tests/update-handoff.test.cjs tests/update-controller.test.cjs",
     "test:update-controller": "node scripts/smoke-update-controller.cjs"
   },

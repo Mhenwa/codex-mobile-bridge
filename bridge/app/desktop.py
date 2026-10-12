@@ -98,19 +98,17 @@ class Desktop:
         return config
 
     def connect(self, value):
-        """Local-only opt-in registration; never return a model/device secret."""
+        """Private Mhenwa Connect control; never expose device secrets to the UI."""
         if not isinstance(value, dict):
             raise ValueError('Connect 操作格式错误')
         if value.get('action') == 'register' and value.get('consent') is not True:
             raise ValueError('开启前需要明确同意发送所选中转站 Key 验证资格')
-        from .connect import ConnectController
+        from bridge.connect import ConnectController
         preferences = self.preferences()
         effective = None
         if value.get('action') in ('discover', 'register'):
-            # Ask the installed runtime for the resolved global configuration,
-            # rather than scanning every inactive provider definition.
-            from .account import AccountRPC, AccountError
-            from .catalog import Catalog
+            from bridge.features.accounts.account import AccountRPC, AccountError
+            from bridge.clients.codex.catalog import Catalog
             runtime = preferences.get('codexBin') or Catalog.find_runtime()
             if runtime:
                 try:

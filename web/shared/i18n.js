@@ -2,6 +2,7 @@
 // UI messages only. Never translate chat content, commands, model IDs or user input.
 const BridgeI18n=(()=>{
 const en={
+"高级选项":"Advanced options",
 "手机访问地址（可选）":"Phone access URL (optional)",
 "留空使用服务器公网 IP":"Leave blank to use the server public IP",
 "使用域名时，需要自行将域名解析到服务器公网 IP，并配置 HTTPS 证书和反向代理；填写完整地址，例如 https://bridge.example.com。":"For a domain, point its DNS record to the server public IP and configure an HTTPS certificate and reverse proxy. Enter the full URL, such as https://bridge.example.com.",

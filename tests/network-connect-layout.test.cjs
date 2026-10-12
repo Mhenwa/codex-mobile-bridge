@@ -47,7 +47,7 @@ test('network tab owns Mhenwa Connect and keeps legacy settings in a collapsed a
 });
 
 test('renderer and Connect controller bind to merged network panel and isolate registration controls',()=>{
-  const renderer=fs.readFileSync(path.join(__dirname,'../desktop/renderer.js'),'utf8');
+  const renderer=fs.readFileSync(path.join(__dirname,'../desktop/shell/renderer.js'),'utf8');
   const connect=fs.readFileSync(path.join(__dirname,'../desktop/connect.js'),'utf8');
   assert.match(renderer,/!node\.closest\('\#connect-content'\)/);
   assert.match(renderer,/if\(name==='connect'\)name='network'/);
@@ -56,12 +56,12 @@ test('renderer and Connect controller bind to merged network panel and isolate r
 });
 
 test('advanced settings text remains complete and migration guidance points to the collapsed section',()=>{
-  const html=load(),i18n=fs.readFileSync(path.join(__dirname,'../web/i18n.js'),'utf8');
-  for(const phrase of ['连接方式','登录验证','额外 HTTPS 地址（高级）','在“网络与登录”底部展开“高级选项”'])assert.match(html,new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  const html=load(),i18n=fs.readFileSync(path.join(__dirname,'../web/shared/i18n.js'),'utf8');
+  for(const phrase of ['连接方式','登录验证','额外 HTTPS 地址（高级）','固定服务器、SSH、局域网和其他入口配置仍在下方“高级选项”中'])assert.match(html,new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
   assert.match(i18n,/"高级选项":"Advanced options"/);
 });
 
 test('computer registration button has a scoped gap after the computer-name field',()=>{
-  const css=fs.readFileSync(path.join(__dirname,'../desktop/style.css'),'utf8');
+  const css=fs.readFileSync(path.join(__dirname,'../desktop/shell/style.css'),'utf8');
   assert.match(css,/#connect-register\s*\{[^}]*margin-top\s*:\s*16px(?:\s*;|\s*\})/);
 });
