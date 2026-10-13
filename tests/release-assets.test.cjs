@@ -1,6 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
+const vm=require('node:vm');
 const {generateKeyPairSync,createHash,sign}=require('node:crypto');
 const {releaseAssetNames,currentReleaseNotes,writeChecksums,verifyRelease}=require('../scripts/release-assets.cjs');
 const {assetName}=require('../desktop/features/updates/updater.cjs');
@@ -65,4 +66,45 @@ test('release workflow prepares a draft and uses the packaged signing identity',
   assert.ok(workflow.includes('--draft --title'));
   assert.ok(!workflow.includes('--draft=false'));
   assert.ok(!workflow.includes('inputs.publish'));
+});
+
+test('release validation allows manual downloads but rejects a mismatched signing identity or tag',()=>{
+  const workflow=fs.readFileSync(path.join(__dirname,'../.github/workflows/release.yml'),'utf8');
+  const script=/node - <<'JS'\r?\n([\s\S]*?)\r?\n\s*JS/.exec(workflow)[1];
+  const keys=generateKeyPairSync('ed25519');
+  const trusted=keys.publicKey.export({type:'spki',format:'pem'});
+  function validate(key='',tag='v'+version,head='tag-commit'){
+    const writes={},warnings=[];
+    vm.runInNewContext(script,{
+      process:{env:{CMB_UPDATE_SIGNING_KEY:key,RELEASE_TAG:tag,GITHUB_OUTPUT:'output',GITHUB_STEP_SUMMARY:'summary'}},
+      console:{warn:message=>warnings.push(message)},
+      require:name=>{
+        if(name==='fs')return {readFileSync:()=>trusted,appendFileSync:(file,text)=>{writes[file]=(writes[file]||'')+text;}};
+        if(name==='child_process')return {execFileSync:(_command,args)=>args[0]==='rev-parse'?head:'tag-commit'};
+        if(name==='./package.json')return {version};
+        return require(name);
+      },
+    });
+    return {writes,warnings};
+  }
+  const unsigned=validate();
+  assert.equal(unsigned.writes.output,'signing_available=false\n');
+  assert.match(unsigned.warnings[0],/manual downloads only/);
+  assert.match(unsigned.writes.summary,/bridge-update.json will not be generated/);
+  const signed=validate(keys.privateKey.export({type:'pkcs8',format:'pem'}));
+  assert.equal(signed.writes.output,'signing_available=true\n');
+  assert.equal(signed.warnings.length,0);
+  assert.throws(()=>validate(generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'})),/signing identity does not match/);
+  assert.throws(()=>validate('','v0.0.0'),/tag matching package.json/);
+  assert.throws(()=>validate('','v'+version,'wrong-commit'),/Checkout must match/);
+});
+
+test('manual release checksums cover built assets without inventing an update manifest',t=>{
+  const {directory}=fixture(t);
+  fs.unlinkSync(path.join(directory,'bridge-update.json'));
+  writeChecksums(directory);
+  const sums=fs.readFileSync(path.join(directory,'SHA256SUMS.txt'),'utf8');
+  assert.equal(sums.trim().split('\n').length,13);
+  assert.ok(!sums.includes('bridge-update.json'));
+  assert.ok(!fs.existsSync(path.join(directory,'bridge-update.json')));
 });

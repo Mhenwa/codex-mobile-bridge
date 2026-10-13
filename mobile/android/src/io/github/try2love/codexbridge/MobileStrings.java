@@ -193,7 +193,7 @@ values.put("请填写完整的 HTTPS 网关地址，或局域网 HTTP 地址，�
   values.put("从电脑菜单选择聊天跟踪。后台显示可能不是最新状态，打开 App 可继续同步。","Choose a chat to track from the computer menu. Background status may be out of date; open the app to sync.");
   values.put("预览灵动岛","Preview Live Activity");
   values.put("此预览尚未配置 Apple 推送签名。需要开发者账号和电脑端推送服务后才能启用后台任务提醒。","Apple push signing is not configured. Background alerts require a developer account and a gateway push service.");
-  values.put("请在系统设置允许 Codex Bridge 通知。","Allow Codex Bridge notifications in system settings.");
+  values.put("请在系统设置允许 Mhenwa Bridge 通知。","Allow Mhenwa Bridge notifications in system settings.");
   values.put("10 秒后显示本地测试通知，可以先锁屏。此测试不代表远程推送已经接通。","A local test notification will appear in 10 seconds. You may lock the screen. This does not verify remote push delivery.");
   values.put("测试通知未能创建，请检查系统通知设置。","Could not schedule the test. Check system notification settings.");
   values.put("未获得相机权限，请粘贴网关地址。","Camera access denied. Paste the gateway address instead.");

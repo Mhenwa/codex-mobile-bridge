@@ -4,7 +4,9 @@
 
 从 v0.2.0-beta.5 起，桌面 App 启动后及每 6 小时检查一次 GitHub Release。
 在「应用更新」中检查新版、阅读说明，点击「更新并重启」。Beta 用户可接收后续 Beta、RC 和正式版；正式版只接收正式版。
-旧版首次升级需要手动安装支持更新的版本。v2.0.2 提供 Mac Apple Silicon（arm64）、Mac Intel（x64）和 Windows x64 安装包。Windows ARM 暂无发布包。Ubuntu x64/ARM64 提供实验性 `.deb` / AppImage，暂不支持应用内更新；升级前停止网关并退出 App，保留数据目录后手动安装。
+旧版首次升级需要手动安装支持更新的版本。v2.0.3 提供 Mac Apple Silicon（arm64）、Mac Intel（x64）和 Windows x64 安装包。Windows ARM 暂无发布包。Ubuntu x64/ARM64 提供实验性 `.deb` / AppImage，暂不支持应用内更新；升级前停止网关并退出 App，保留数据目录后手动安装。
+
+Mhenwa fork 的 v2.0.3 未配置与现有更新公钥匹配的私钥，本次发布仅支持从 Release 手动下载，不提供 `bridge-update.json` 或应用内更新。下载后核验 `SHA256SUMS.txt`，再退出 App 并安装。SHA-256 用于比对文件完整性，不是更新身份签名；现有桌面更新公钥保持不变。
 
 下载阶段网关保持在线。签名、哈希、解压路径和包版本检查通过后，App 才退出并停止网关。
 应用在原位置替换，原本运行的网关随后恢复；原本停止的网关保持停止。
@@ -21,11 +23,15 @@ macOS 更新签名与 Apple Developer ID、公证是不同机制；该功能不�
 ## 发布流程
 
 1. 同步 `package.json` / `package-lock.json`、Android/iOS 版本与递增的构建号，更新 `RELEASE_NOTES.md`。保留已有 Android 签名和移动端应用身份，不能临时生成新密钥替代覆盖升级。
-2. 仓库 Actions Secret `UPDATE_SIGNING_KEY` 必须对应 `desktop/features/updates/update-public-key.pem` 中的 Ed25519 公钥。私钥不提交、不放入构建产物；不要重新生成公钥覆盖现有更新身份。
+2. 启用应用内更新时，仓库 Actions Secret `UPDATE_SIGNING_KEY` 必须对应 `desktop/features/updates/update-public-key.pem` 中的 Ed25519 公钥。私钥不提交、不放入构建产物；不要重新生成公钥覆盖现有更新身份。没有私钥时可发布手动下载版本，流程保留公钥并省略 `bridge-update.json`，发布说明必须明确应用内更新不可用。
 3. 运行源码测试及五个原生 Desktop builds 目标：macOS arm64、macOS x64、Windows x64、Ubuntu x64、Ubuntu ARM64。Mac 网关与 Electron 在对应架构 runner 构建；核验安装、架构、签名、启动、更新交接、失败恢复与配置保留。iOS 可复用构建生成未签名 IPA 与源码 ZIP；Android 用原签名在本地生成 APK。
-4. 推送匹配版本的 tag，或对已有版本 tag 手动运行 **Prepare signed release draft**。流程验证版本和签名身份，等待五个桌面目标及 iOS 构建，始终先生成草稿，不自动发布正式版。
+4. 推送匹配版本的 tag，或对已有版本 tag 手动运行 **Prepare release draft**。流程验证版本与 tag 提交；配置私钥时还核验签名身份，错误私钥仍会阻止构建。等待五个桌面目标及 iOS 构建后始终先生成草稿，不自动发布正式版。未配置私钥时生成手动下载说明和已构建资产的 SHA-256 校验文件。
 5. 收齐 13 个安装/源码包：两种 Mac 的 DMG/ZIP、Windows Setup/ZIP、两种 Ubuntu 的 DEB/AppImage、Android APK、iOS IPA 与源码 ZIP，以及 `bridge-update.json`。运行 `node scripts/release-assets.cjs verify <目录> --write-checksums` 验证并生成 `SHA256SUMS.txt`。校验文件覆盖这 14 个文件；更新签名载荷继续认证 macOS arm64/x64 和 Windows x64 的三个 ZIP。
 6. 上传缺失的 Android 包和最终校验文件，再下载草稿全部资产，运行 `node scripts/release-assets.cjs verify <目录>` 重新核验。完整性、签名与所有计划资产通过后才将草稿发布为正式版；失败时保留草稿排查。发布后检查实际下载地址、Latest 与 App 检查更新结果。
+
+上述第 5、6 步的 `verify` 是签名发布的验证入口，要求 `bridge-update.json`，不能用于无签名的手动下载发布。手动发布需逐项核对五个平台桌面包、iOS 包及本次计划的 Android 包，验证所有文件非空且构建身份正确；收齐文件后运行 `node -e "require('./scripts/release-assets.cjs').writeChecksums(process.argv[1])" <目录>` 生成最终 `SHA256SUMS.txt`。上传后重新下载全部资产，确认文件列表与计划完全一致，并用 `sha256sum -c SHA256SUMS.txt` 核验全部文件，再发布草稿。不得把 SHA-256 校验成功写成更新签名验证成功。
+
+Mhenwa Android 使用独立包名和独立签名发布时，与上游 App 并存，不能覆盖上游 App；须保存该独立 App 的签名私钥供后续覆盖升级使用。
 
 `bridge-update.json` 是签名信封：`payload` 为 JSON 原始字节的 Base64，`signature` 为其 Ed25519 签名。载荷包含 schema、版本、说明、平台文件名、大小和 SHA-256。App 内公钥验签后才接受文件信息，下载地址固定到本仓库 Release，拒绝降级与平台不匹配。
 

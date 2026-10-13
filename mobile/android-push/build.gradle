@@ -1,12 +1,19 @@
 plugins { id 'com.android.application' version '8.7.3'; id 'com.google.gms.google-services' version '4.4.2' }
+def signingFile = file('../../.local/android-signing/signing.json')
+def mhenwaSigning = signingFile.exists() ? new groovy.json.JsonSlurper().parse(signingFile) : null
 android {
- namespace 'io.github.try2love.codexbridge.preview'
+ namespace 'cc.mhenwa.codexbridge'
  compileSdk 35
  buildToolsVersion "35.0.0"
- defaultConfig { applicationId 'io.github.try2love.codexbridge.preview'; minSdk 26; targetSdk 35; versionCode 29; versionName '2.0.2' }
+ defaultConfig { applicationId 'cc.mhenwa.codexbridge'; minSdk 26; targetSdk 35; versionCode 30; versionName '2.0.3' }
  sourceSets { main { manifest.srcFile 'AndroidManifest.xml'; java.srcDirs = ['../android/src', 'src']; res.srcDirs = ['../android/res']; assets.srcDirs = ['../shared/web', '../android/assets', '../../web/client-icons'] } }
  compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
- signingConfigs { preview { storeFile file('../../.tmp/mobile-tools/preview-debug.p12'); storePassword 'android'; keyAlias 'preview'; keyPassword 'android' } }
- buildTypes { debug { signingConfig signingConfigs.preview } }
+ signingConfigs { if (mhenwaSigning) { mhenwa { storeFile file(mhenwaSigning.keystore); storePassword mhenwaSigning.storePassword; keyAlias mhenwaSigning.keyAlias; keyPassword mhenwaSigning.keyPassword ?: mhenwaSigning.storePassword } } }
+ buildTypes { release { if (mhenwaSigning) signingConfig signingConfigs.mhenwa }; debug { if (mhenwaSigning) signingConfig signingConfigs.mhenwa } }
+}
+gradle.taskGraph.whenReady { graph ->
+ if (!mhenwaSigning && graph.allTasks.any { it.name.startsWith('assemble') || it.name.startsWith('package') }) {
+  throw new GradleException('Mhenwa Android signing config missing: .local/android-signing/signing.json')
+ }
 }
 dependencies { implementation 'com.google.firebase:firebase-messaging:24.1.0'; implementation 'com.google.zxing:core:3.5.3' }

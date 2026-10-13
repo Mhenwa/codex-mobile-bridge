@@ -167,7 +167,7 @@
 <h2 data-en="Tailscale: keep one HTTPS address" id="tailscale-title">Tailscale：保留一个固定 HTTPS 地址</h2><p class="example-note" data-en="Tailscale public forwarding or relay traffic may pass through overseas nodes. Direct access from mainland China can be slow or time out; private peer-to-peer routes differ from public Funnel access.">Tailscale 公网转发或中继链路可能经过境外节点，中国大陆直连可能较慢或超时；私有组网直连与公网 Funnel 的访问路径不同。</p>
 <p class="panel-intro" data-en="No server, domain purchase or invitation required. Install the official client on the work computer and connect it to the gateway.">无需自建服务器、购买域名或邀请码。在工作电脑安装官方客户端，再从网关接入。</p>
 <p class="example-note" data-en="Available in v2.0.0. Install and sign in to official Tailscale on the gateway computer, then grant the initial Serve / Funnel authorization.">v2.0.0 已支持。在网关电脑安装并登录官方 Tailscale，首次使用按提示完成 Serve / Funnel 授权。</p>
-<p class="actions"><a class="button" data-en="View stable source" href="https://github.com/try2love/codex-mobile-bridge/tree/v2.0.2">查看正式版源码</a></p>
+<p class="actions"><a class="button" data-en="View stable source" href="https://github.com/Mhenwa/codex-mobile-bridge/tree/v2.0.3">查看正式版源码</a></p>
 <figure class="network-map"><div class="map-flow">
 <div class="map-node"><span class="map-index">1</span><strong data-en="Phone / browser">手机／浏览器</strong><small data-en="https://device.tailnet.ts.net">https://设备名.网络名.ts.net</small></div>
 <span class="map-arrow" aria-hidden="true">→</span>
@@ -449,7 +449,7 @@
 </table>
 </div>
 <p class="callout" data-en="The phone URL is optional. For a domain, point DNS to the server public IP and configure HTTPS. Leave it blank to use the public IP from the SSH server address (or alias HostName); saving fills in https://public-IP. The server still needs a reverse proxy and a trusted certificate whose Subject Alternative Name includes that IP. SSH alone is not enough. ">“手机访问地址”可留空。使用域名时，需要自行解析到服务器公网 IP 并配置 HTTPS；留空时，从 SSH 服务器地址（或别名的 HostName）中的公网 IP 自动填入 https://公网IP。服务器仍需配置反向代理，以及 Subject Alternative Name 包含该 IP 的受信任证书；仅有 SSH 不能直接访问。</p>
-<p class="example-note"><a href="https://github.com/try2love/codex-mobile-bridge/blob/refactor/platform-feature-layout/docs/server-ssh.md" data-en="Read the public IP HTTPS requirements ↗">查看公网 IP HTTPS 的准备条件 ↗</a></p>
+<p class="example-note"><a href="https://github.com/Mhenwa/codex-mobile-bridge/blob/main/docs/server-ssh.md" data-en="Read the public IP HTTPS requirements ↗">查看公网 IP HTTPS 的准备条件 ↗</a></p>
 <article class="guide-step" id="server-inspect">
 <div class="step-head">
 <span class="step-number">01</span>

@@ -1,3 +1,27 @@
+## v2.0.3 · Mhenwa Connect 手机接入与配对反馈
+
+- **独立 Mhenwa Android App**：应用名为 `Mhenwa Bridge`，包名为 `cc.mhenwa.codexbridge`，使用独立签名并可与上游 App 共存。首次使用需重新配对；后续 Mhenwa 版本可用相同包名和签名覆盖升级。
+- **Mhenwa Connect 手机配对**：Android App 现在支持扫描或粘贴 `#connect_pair` 配对地址，沿用固定 relay 的一次性配对、桌面批准和 HttpOnly 会话流程，不要求在手机输入模型 API Key。
+- **完整 Android 会话绑定**：原生通知轮询、连接记忆、设备移除和后台状态快照同时识别 Mhenwa Connect 与原生网关会话 Cookie，避免已批准手机被误判为未登录。
+- **手动网关地址更适合粘贴**：输入网关地址时不再自动填入 `https://`，可直接粘贴完整 HTTPS 地址或 Connect 配对地址。
+- **桌面批准状态更明确**：批准手机时显示旋转加载图标并锁定批准/拒绝操作，避免用户误以为点击没有生效。
+- **网络入口布局统一**：网络访问中的 Connect 操作按钮使用等高、等宽和一致间距，窄屏自动切换为两列布局。
+- 保留上游 v2.0.2 的文件兼容、手机文件打开、登录自启和聊天列表改进，同时继续保留 `api.mhenwa.cc` provider 及固定服务器认证逻辑。
+- 本次桌面版从 Release 手动下载更新，保留现有更新公钥。未配置对应的更新签名私钥，不提供 `bridge-update.json`；下载后请核对 `SHA256SUMS.txt`。
+
+### English
+
+- Publish an independent `Mhenwa Bridge` Android app with package ID `cc.mhenwa.codexbridge` and its own signing identity. It can coexist with the upstream app and requires pairing again on first use; later Mhenwa builds can update it with the same package and signature.
+- Add Android Mhenwa Connect pairing through QR scanning or a pasted `#connect_pair` URL, using the one-time claim, desktop approval and HttpOnly session flow without asking for a model API key on the phone.
+- Recognize both Mhenwa Connect and the original gateway session cookies in Android connection memory, notifications and removal handling.
+- Leave the manual gateway address field empty so complete HTTPS or Connect URLs can be pasted directly.
+- Show a spinner and lock both decisions while a desktop phone approval is being processed.
+- Align Connect network actions to equal-height, equal-width buttons with consistent spacing and a two-column narrow layout.
+- Retain the upstream v2.0.2 compatibility, mobile file-opening, login-startup and chat-list improvements together with the fixed-server authentication and `api.mhenwa.cc` provider logic.
+- Desktop updates are manual downloads for this release. The existing update public key is preserved, but its signing key is unavailable, so no `bridge-update.json` is provided. Check downloads against `SHA256SUMS.txt`.
+
+---
+
 ## v2.0.2 · 文件兼容与聊天列表体验优化
 
 - **聊天列表更连贯**：Codex 列表滚动接近底部时自动加载后续聊天，移除常驻“加载更多”按钮。下拉刷新提示不再挤压列表，手势跟随与回弹更顺滑，成功提示更快收起；内容未变化时保留已有列表节点和阅读位置。

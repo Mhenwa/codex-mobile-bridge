@@ -1,5 +1,5 @@
 'use strict';
-const repo='https://github.com/try2love/codex-mobile-bridge';
+const repo='https://github.com/Mhenwa/codex-mobile-bridge';
 const video=document.getElementById('tour');
 const languageButtons=[...document.querySelectorAll('[data-language]')];
 let language='zh',chapters=[];

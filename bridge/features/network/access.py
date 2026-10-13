@@ -314,7 +314,7 @@ docker compose logs --tail=50
 
 ## 给部署 Agent
 
-项目：https://github.com/try2love/codex-mobile-bridge
+项目：https://github.com/Mhenwa/codex-mobile-bridge
 仅使用用户授权的服务器/NAS；执行前确认现有站点、端口和 DNS，禁止覆盖已有服务。部署依赖缺失时先说明。不要复制 Codex 凭据或私钥，不更改电脑网关端口。完成后返回固定 HTTPS 地址、原局域网地址、密码获取方式、部署目录、启停命令、已通过和未通过的验收项。没有权限或真实入口时，说明尚未部署，不声称连通。
 '''
     if p['accessMode'] == 'server':
@@ -351,7 +351,7 @@ Start/update: `docker compose up -d`. Logs: `docker compose logs --tail=50`. Sto
 
 ## Instructions for deployment Agents
 
-Project: https://github.com/try2love/codex-mobile-bridge
+Project: https://github.com/Mhenwa/codex-mobile-bridge
 Use only authorized servers or NAS devices. Check existing sites, DNS and ports before deploying; do not overwrite existing services. Explain missing dependencies before installing them. Keep the computer gateway port, model authentication and SSH keys unchanged. Return the fixed HTTPS URL, original LAN URL, credential retrieval method, deployment directory, start/stop commands, verified results and remaining checks. If access is unavailable, deliver the prepared configuration and clearly say deployment is pending.
 '''
     if p['accessMode'] == 'server':

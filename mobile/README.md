@@ -2,15 +2,15 @@
 
 手机扫描网关二维码后连接 Codex、Claude Desktop 和 DeepSeek Harness，电脑继续执行任务。手机 App 保存多台电脑，提供原生扫码、剪贴板、文件下载和通知；浏览器入口同时保留。
 
-**[v2.0.2 下载](https://github.com/try2love/codex-mobile-bridge/releases/tag/v2.0.2)** · [完整更新说明](../RELEASE_NOTES.md) · [桌面客户端接入](../docs/deepseek-harness.md)
+**[v2.0.3 下载](https://github.com/Mhenwa/codex-mobile-bridge/releases/tag/v2.0.3)** · [完整更新说明](../RELEASE_NOTES.md) · [桌面客户端接入](../docs/deepseek-harness.md)
 
 ## 安装与升级
 
-- **Android 8.0 及以上**：从 Release 下载 `Codex-Mobile-Bridge-2.0.2-Android.apk`，按系统提示安装。升级时覆盖安装，不要先卸载，以保留电脑列表和登录。相机权限仅供扫码，拒绝后仍可粘贴地址登录。
+- **Android 8.0 及以上**：从 Release 下载 `Codex-Mobile-Bridge-2.0.3-Android.apk`，按系统提示安装。应用名为 **Mhenwa Bridge**，包名为 `cc.mhenwa.codexbridge`，使用 Mhenwa 独立签名，可与上游 Codex Bridge 同时安装。它不会覆盖上游 App；首次安装需重新保存电脑并配对。后续只可覆盖同包名、同签名的 Mhenwa App，升级时不要先卸载，以保留电脑列表和登录。相机权限仅供扫码，拒绝后仍可粘贴地址登录。
 - **iPhone / iPad**：Release 提供未签名 IPA 和 Xcode 源码包，需使用自己的 Apple 账号签名；不能直接点击 IPA 安装，暂无 App Store / TestFlight 分发。免费签名可能需要定期重新安装。
 - 使用 Release 中的 `SHA256SUMS.txt` 校验下载。编译通过不代表已验证所有机型、系统版本和网络环境。
 
-在「手机设置 → 应用更新」查看当前版本并检查更新。正式版只检查正式发布，预览版也可检查后续预览；不会自动下载或安装。检查访问公开 GitHub Release，不携带网关凭据或 Cookie。Android 下载 APK 后覆盖安装，iOS 打开新版与签名安装指引。
+在「手机设置 → 应用更新」查看当前版本并检查更新。正式版只检查正式发布，预览版也可检查后续预览；不会自动下载或安装。检查访问公开 GitHub Release，不携带网关凭据或 Cookie。Android 从 Mhenwa 仓库下载 APK 后覆盖同签名的 Mhenwa App，iOS 打开新版与签名安装指引。
 
 ### 使用 Xcode 安装到 iPhone
 
@@ -27,6 +27,8 @@
 4. 保持电脑、网关和相应客户端在线。局域网需手机能访问电脑；外出可选择 [Tailscale](../docs/tailscale.md)、[Cloudflare](../docs/fixed-domain.md)、[自有服务器 + SSH](../docs/server-ssh.md) 或已有 HTTPS 反代。
 
 扫码建立可撤销的可信设备绑定，不保存网关密码，正常重启 App 或网关后仍可连接。手机登录不受普通浏览器登录有效期影响。电脑端可在「登录与设备」撤销绑定；移除电脑、清除 App 数据、更改认证或主动撤销后可能需要重新配对。已经失效的旧登录不会无凭据地升级为新绑定。
+
+使用 **Mhenwa Connect** 时，在桌面「网络访问」注册电脑并生成手机配对链接，手机扫码或粘贴完整链接，然后在桌面「待批准手机」中批准。Android 同时识别普通 `pair=` 和 Connect `connect_pair=` 配对码，手动地址输入框初始为空。通知支持独立 `mhenwabridge://open` 链接，并兼容网关原有 `codexbridge://open`；同时安装上游 App 时，请在系统选择框中选择 **Mhenwa Bridge**。通知只能打开本 App 已保存的电脑。
 
 相机扫码不建立网络通道。固定地址也不保证国内直连速度；请在实际 Wi-Fi、蜂窝网络验证。Tailscale Funnel 不要求手机安装 Tailscale；私有 Serve 则要求手机接入有权限的 tailnet。
 
@@ -118,7 +120,7 @@ macOS/Linux 使用登录 shell 与 PTY；Windows 10 1809 及以上使用 ConPTY 
 
 两端共用的页面适配、剪贴板等在 `shared/web/` 保留单一源码，原生平台分开维护。源码资源回归使用 `node --test mobile/tests/*.test.cjs`，不会运行原生编译器。
 
-Android 入口是 `scripts/build-mobile-android.py`，使用项目 `.tmp/mobile-tools` 中已准备的 JDK、SDK 和 ZXing；发布必须保留既有签名，不能以新建密钥替代升级验证。地址边界验证见 `scripts/test-mobile-urls.py`，会话验证见 `scripts/test-mobile-session.py`，通知事件见 `tests/test_mobile_events.py`。
+Android 入口是 `scripts/build-mobile-android.py`，使用项目 `.tmp/mobile-tools` 中已准备的 SDK 和 ZXing；JDK 可通过 `JAVA_HOME` 或 `--jdk` 指定，支持 Windows 和 Unix 工具名。Mhenwa 发布签名保存于本机 `.local/android-signing/`，必须安全备份并沿用同一身份；该目录不会提交或进入构建产物。构建使用 `python -B scripts/build-mobile-android.py --signing-config .local/android-signing/signing.json`；配置包含既有 keystore 路径、alias 和密码，脚本通过进程环境向签名工具传递密码，不自动生成替代密钥。没有签名时只可显式使用 `--unsigned` 生成不可直接安装的 APK。可选 FCM flavor 读取同一份本地签名配置。地址边界验证见 `scripts/test-mobile-urls.py`，会话验证见 `scripts/test-mobile-session.py`，通知事件见 `tests/test_mobile_events.py`。
 
 iOS 构建入口 `scripts/build-mobile-ios.py` 生成未签名 IPA 和包含受版本管理源码的 Xcode ZIP；`--source-only` 只导出源码，无需 Xcode。脚本不会自动安装模拟器运行时；模拟器 SDK 编译与实际启动测试应分别记录。
 

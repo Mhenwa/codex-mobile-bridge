@@ -1,8 +1,8 @@
 import Foundation
 
 struct MobileRelease {
-    static let repository = "https://github.com/try2love/codex-mobile-bridge"
-    static let api = URL(string: "https://api.github.com/repos/try2love/codex-mobile-bridge/releases?per_page=100")!
+    static let repository = "https://github.com/Mhenwa/codex-mobile-bridge"
+    static let api = URL(string: "https://api.github.com/repos/Mhenwa/codex-mobile-bridge/releases?per_page=100")!
     let version: String
     let notes: String
     var page: URL { URL(string: Self.repository + "/releases/tag/v" + version)! }

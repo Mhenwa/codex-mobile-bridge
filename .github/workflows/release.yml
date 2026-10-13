@@ -1,4 +1,4 @@
-name: Prepare signed release draft
+name: Prepare release draft
 on:
   push:
     tags: ['v*']
@@ -16,6 +16,8 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      signing_available: ${{ steps.identity.outputs.signing_available }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,6 +26,7 @@ jobs:
         with:
           node-version: '24'
       - name: Verify release identity
+        id: identity
         env:
           CMB_UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
           RELEASE_TAG: ${{ inputs.source_ref || github.ref_name }}
@@ -35,8 +38,12 @@ jobs:
           const cp=require('child_process');
           if(cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==cp.execFileSync('git',['rev-list','-n','1',expected],{encoding:'utf8'}).trim())throw Error('Checkout must match the release tag.');
           const key=process.env.CMB_UPDATE_SIGNING_KEY;
-          if(!key)throw Error('Configure the UPDATE_SIGNING_KEY release secret first.');
-          if(crypto.createPublicKey(key).export({type:'spki',format:'pem'})!==fs.readFileSync('desktop/features/updates/update-public-key.pem','utf8'))throw Error('Release signing identity does not match the app.');
+          if(key&&crypto.createPublicKey(key).export({type:'spki',format:'pem'})!==fs.readFileSync('desktop/features/updates/update-public-key.pem','utf8'))throw Error('Release signing identity does not match the app.');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'signing_available='+Boolean(key)+'\n');
+          if(!key){
+            console.warn('::warning::UPDATE_SIGNING_KEY is unavailable. This draft supports manual downloads only; no signed in-app update manifest will be published.');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'Manual-download release: the existing update identity is preserved; bridge-update.json will not be generated.\n');
+          }
           JS
   build:
     needs: validate
@@ -49,7 +56,7 @@ jobs:
     with:
       source_ref: ${{ inputs.source_ref || github.ref }}
   release:
-    needs: [build, ios]
+    needs: [validate, build, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -72,9 +79,20 @@ jobs:
       - name: Extract this release's notes
         run: node scripts/release-assets.cjs notes RELEASE_NOTES.md .tmp/release-notes.md
       - name: Sign desktop update manifest
+        if: needs.validate.outputs.signing_available == 'true'
         env:
           CMB_UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: node scripts/sign-update.cjs dist/release .tmp/release-notes.md
+      - name: Prepare manual-download checksums and notice
+        if: needs.validate.outputs.signing_available != 'true'
+        run: |
+          node - <<'JS'
+          const fs=require('fs');
+          require('./scripts/release-assets.cjs').writeChecksums('dist/release');
+          const file='.tmp/release-notes.md';
+          const notice='> **本次版本仅支持手动下载更新。** 桌面更新签名私钥尚未配置，未生成 `bridge-update.json`，应用内更新不可用。现有更新公钥保持不变。安装前请核验 `SHA256SUMS.txt`；SHA-256 校验不等同于发布签名。\n\n> **Manual downloads only.** The desktop update signing key is unavailable, so this release has no `bridge-update.json` and cannot be installed through the in-app updater. The existing update public key is unchanged. Verify downloaded files against `SHA256SUMS.txt`; checksums are not release signatures.\n\n';
+          fs.writeFileSync(file,notice+fs.readFileSync(file,'utf8'));
+          JS
       - name: Upload release draft for final asset verification
         env:
           GH_TOKEN: ${{ github.token }}
@@ -84,6 +102,6 @@ jobs:
           if [[ "$TAG" == *-* ]]; then flags+=(--prerelease --latest=false); fi
           gh release create "$TAG" dist/release/* --verify-tag --draft --title "$TAG" --notes-file .tmp/release-notes.md "${flags[@]}"
           # Every release stays draft until the maintainer assembles the mobile
-          # assets, runs release-assets.cjs verify with --write-checksums, uploads
-          # the complete set, then downloads and verifies it again before publish.
+          # assets, verifies the complete signed or manual-download asset set,
+          # uploads final checksums, then downloads and verifies it before publish.
           echo 'Draft created. Complete and verify all desktop/mobile assets before publishing.' >> "$GITHUB_STEP_SUMMARY"
