@@ -28,7 +28,7 @@ const snapshotWorker=createSnapshotWorker();
 const managementWorker=createManagementWorker();
 let connectionSecrets={},setupPending=false;
 const entry=pathToFileURL(path.join(__dirname,'index.html')).href;
-function releaseTray(){snapshotWorker.close();managementWorker.close();quitting=true;tray?.dispose();tray=null;}
+function releaseTray(){pairingLinks.clear();snapshotWorker.close();managementWorker.close();quitting=true;tray?.dispose();tray=null;}
 function loadDataDir(){
   if(process.env.CMB_UPDATE_DATA_DIR)return path.resolve(process.env.CMB_UPDATE_DATA_DIR);
   if(process.env.CMB_DATA_DIR)return path.resolve(process.env.CMB_DATA_DIR);
@@ -56,7 +56,10 @@ function worker(action,payload){
   if(writes)workerWrites++;
   if(action==='snapshot'&&snapshotPending)return snapshotPending;
   const options=workerFor({packaged:app.isPackaged,resources:process.resourcesPath,root,dataDir});
-  const result=(action==='snapshot'&&!updater?.busy?snapshotWorker.read(options):['accounts','account','desktop-sessions','start','stop','save'].includes(action)?managementWorker.call(options,action,payload):runWorker(options,action,payload)).then(value=>['snapshot','save'].includes(action)?{...value,networkInterfaces:interfaces(),cloudflaredInstall:installStatus,update:updater?.status(),updateResult:updateResult(),updateManaged:updateManaged(),loginStartup:loginStartup.status()}:value).finally(()=>{if(writes)workerWrites--;});
+  const result=(action==='snapshot'&&!updater?.busy?snapshotWorker.read(options):['accounts','account','desktop-sessions','start','stop','save'].includes(action)?managementWorker.call(options,action,payload):runWorker(options,action,payload)).then(value=>{
+    if(action==='stop')pairingLinks.clear();
+    return ['snapshot','save'].includes(action)?{...value,networkInterfaces:interfaces(),cloudflaredInstall:installStatus,update:updater?.status(),updateResult:updateResult(),updateManaged:updateManaged(),loginStartup:loginStartup.status()}:value;
+  }).finally(()=>{if(writes)workerWrites--;});
   if(action==='snapshot')snapshotPending=result.then(value=>{lastSnapshot=value;return value;}).finally(()=>{snapshotPending=null;});
   return action==='snapshot'?snapshotPending:result;
 }
@@ -255,7 +258,7 @@ function register(){
       if(updater.busy)throw Error('正在更新应用，请稍候。');
       if(installPending)throw Error('正在安装 cloudflared，请完成后再切换数据目录。');
       if(setupPending)throw Error('请等待服务器操作完成。');
-      installStatus={};connectionSecrets={};
+      installStatus={};connectionSecrets={};pairingLinks.clear();
       publishLanguage(selected,language);dataDir=selected;fs.mkdirSync(app.getPath('userData'),{recursive:true});
       fs.writeFileSync(path.join(app.getPath('userData'),'bridge-location.json'),JSON.stringify({dataDir}),{mode:0o600});
     }

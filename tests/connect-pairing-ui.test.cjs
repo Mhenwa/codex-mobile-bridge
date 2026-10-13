@@ -74,7 +74,7 @@ test('platform hides administrative UI and redirects old authorized pairing link
   assert.ok(fs.readFileSync(path.join(__dirname,'../connect/web/platform.css'),'utf8').includes('!important'));
 });
 test('platform uploads do not replay automatically on unknown network outcomes',async()=>{
-  const app=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
+  const app=fs.readFileSync(path.join(__dirname,'../web/shell/app.js'),'utf8');
   const fn=app.match(/async function uploadAttachmentWithRetry\([^\n]+/)[0];
   let attempts=0;
   const context={window:{MhenwaConnect:true},uploadAttachment:async()=>{attempts++;throw TypeError('network unknown');}};
@@ -84,11 +84,11 @@ test('platform uploads do not replay automatically on unknown network outcomes',
 });
 
 function stopHarness(host,{error}={}){
-  const app=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
+  const app=fs.readFileSync(path.join(__dirname,'../web/shell/app.js'),'utf8');
   const sessionUrl=app.match(/^function sessionUrl\([^\n]+/m)[0];
   const handler=app.match(/^\$\('stop'\)\.onclick=[^\n]+/m)[0];
   const node={},calls=[],toasts=[];
-  const context={currentId:'00000000-0000-4000-8000-000000000001',currentHost:host,
+  const context={window:{},currentId:'00000000-0000-4000-8000-000000000001',currentHost:host,
     $:id=>{assert.equal(id,'stop');return node;},encodeURIComponent,
     api:async(url,body)=>{calls.push({url,body});if(error)throw Error(error);},
     toast:value=>toasts.push(value)};

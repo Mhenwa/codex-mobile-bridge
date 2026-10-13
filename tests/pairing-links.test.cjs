@@ -71,10 +71,13 @@ async function mainFixture(){
   function mockRequire(name){
     if(name==='electron')return electron;
     if(name==='node:fs')return mockedFs;
-    if(name==='./controller.cjs')return {runWorker,workerFor:()=>({}),createSnapshotWorker:()=>({read:()=>runWorker(null,'snapshot'),close(){}})};
-    if(name==='./qr.cjs')return {pairingImage:async grant=>{if(failImage)throw Error('QR fixture failure');return {...grant,image:'data:image/png;base64,fixture'};}};
-    if(name==='./updater.cjs')return {allowedUrl(){},Updater:class{busy=false;status(){return {};}check(){}}};
-    if(name==='./cloudflared.cjs')return {electronFetch(){}};
+    if(name==='./shared/controller.cjs')return {runWorker,workerFor:()=>({}),createSnapshotWorker:()=>({read:()=>runWorker(null,'snapshot'),close(){}}),
+      createManagementWorker:()=>({call:runWorker,close(){}})};
+    if(name==='./features/connections/qr.cjs')return {pairingImage:async grant=>{if(failImage)throw Error('QR fixture failure');return {...grant,image:'data:image/png;base64,fixture'};}};
+    if(name==='./features/updates/updater.cjs')return {allowedMirrorUrl(){},Updater:class{busy=false;status(){return {};}check(){}}};
+    if(name==='./features/connections/cloudflared.cjs')return {electronFetch(){}};
+    if(name==='./shared/gateway-language.cjs')return {publishLanguage(){}};
+    if(name==='./login-startup.cjs')return {restoreDevelopmentEnvironment(){},createLoginStartup:()=>({status:()=>({supported:false,enabled:false}),hidden:()=>false})};
     if(name.startsWith('./'))return require(path.join(desktop,name));
     return require(name);
   }
