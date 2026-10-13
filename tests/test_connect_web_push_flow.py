@@ -9,10 +9,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from aiohttp import ClientSession, DummyCookieJar
-from aiohttp.test_utils import TestServer
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+try:
+    from aiohttp import ClientSession, DummyCookieJar
+    from aiohttp.test_utils import TestServer
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+except ModuleNotFoundError as exc:
+    if exc.name.split('.')[0] not in ('aiohttp', 'cryptography'):
+        raise
+    raise unittest.SkipTest('optional requirements-relay.txt not installed') from exc
 
 from bridge.connect import ConnectController, notification_identity, private_json, read_config
 from bridge.features.notifications.channels import Notifications

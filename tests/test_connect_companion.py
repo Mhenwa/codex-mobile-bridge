@@ -14,8 +14,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
-import aiohttp
-from aiohttp import web
+try:
+    import aiohttp
+    from aiohttp import web
+except ModuleNotFoundError as exc:
+    if exc.name != 'aiohttp':
+        raise
+    aiohttp = None
 
 from bridge.connect import (ConnectController, ConnectError, Connector, NoRedirect, enabled,
                             MAX_CONTROL_RESPONSE, private_json, read_config, relay_origin,
@@ -263,6 +268,7 @@ class ControllerTests(unittest.TestCase):
                 self.assertNotIn(DEVICE, message)
 
 
+@unittest.skipUnless(aiohttp, 'optional requirements-connect.txt not installed')
 class ForwardTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()

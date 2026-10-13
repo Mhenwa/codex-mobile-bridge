@@ -7,12 +7,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from aiohttp import DummyCookieJar, WSServerHandshakeError, WSMsgType
-from aiohttp.test_utils import TestClient, TestServer
-
 from connect.protocol import MAX_BODY, safe_content_type, validate_request
 from connect.registry import Registry
-from connect.relay import COOKIE, STATE, create_app
+
+try:
+    import aiohttp
+    from aiohttp import DummyCookieJar, WSServerHandshakeError, WSMsgType
+    from aiohttp.test_utils import TestClient, TestServer
+    from connect.relay import COOKIE, STATE, create_app
+except ModuleNotFoundError as exc:
+    if exc.name != 'aiohttp':
+        raise
+    aiohttp = None
 
 THREAD = "12345678-1234-1234-1234-123456789abc"
 
@@ -80,6 +86,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(safe_content_type("application/json; charset=utf-8"), "application/json; charset=utf-8")
 
 
+@unittest.skipUnless(aiohttp, 'optional requirements-connect.txt not installed')
 class RelayConfigurationTests(unittest.TestCase):
     def test_zero_resource_caps_normalize_to_unlimited_without_removing_body_budget(self):
         async def eligibility(_key):
@@ -101,6 +108,7 @@ class RelayConfigurationTests(unittest.TestCase):
                 state.registry.close()
 
 
+@unittest.skipUnless(aiohttp, 'optional requirements-connect.txt not installed')
 class RelayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()

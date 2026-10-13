@@ -11,12 +11,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import http_ece
-from aiohttp import DummyCookieJar
-from aiohttp.test_utils import TestClient, TestServer
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+try:
+    import http_ece
+    from aiohttp import DummyCookieJar
+    from aiohttp.test_utils import TestClient, TestServer
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+except ModuleNotFoundError as exc:
+    if exc.name.split('.')[0] not in ('aiohttp', 'http_ece', 'cryptography'):
+        raise
+    raise unittest.SkipTest('optional requirements-relay.txt not installed') from exc
 
 from connect.push import (EncryptedSender, PublicResolver, PushService,
                           notification_payload, validate_endpoint,

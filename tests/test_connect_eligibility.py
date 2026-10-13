@@ -8,8 +8,13 @@ import time
 import unittest
 from pathlib import Path
 
-from aiohttp import web
-from aiohttp.test_utils import TestServer
+try:
+    from aiohttp import web
+    from aiohttp.test_utils import TestServer
+except ModuleNotFoundError as exc:
+    if exc.name != 'aiohttp':
+        raise
+    raise unittest.SkipTest('optional requirements-connect.txt not installed') from exc
 
 from connect.eligibility import EligibilityClient, SQLiteLookup, create_adapter, qualify
 
