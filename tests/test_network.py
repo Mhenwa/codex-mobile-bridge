@@ -145,8 +145,16 @@ class LocalAccessTests(unittest.TestCase):
                 with socket.socket() as probe:
                     probe.bind(('0.0.0.0', 0));port = probe.getsockname()[1]
                 (data/'desktop.json').write_text(json.dumps({'port': port}), encoding='utf8')
+                # This fixture checks listener ownership, not installed clients.
+                # Default Codex startup can launch a real desktop whose cwd keeps
+                # the temporary directory locked after the gateway has exited.
+                sessions = data/'desktop-sessions'
+                sessions.mkdir()
+                (sessions/'settings.json').write_text(json.dumps({
+                    'enabled': {'codex': False, 'claude': False, 'deepseek': False},
+                }), encoding='utf8')
                 with (data/'log').open('wb') as log:
-                    child = subprocess.Popen([sys.executable, '-B', str(ROOT/'run.py'), '--lan', '--config', str(config), '--codex-home', folder, '--port', str(port)], stdout=log, stderr=log)
+                    child = subprocess.Popen([sys.executable, '-B', str(ROOT/'run.py'), '--lan', '--config', str(config), '--codex-home', folder, '--codex-bin', str(data/'absent-codex-runtime'), '--port', str(port)], stdout=log, stderr=log)
                     try:
                         desktop = Desktop(data)
                         end = time.monotonic() + 15
