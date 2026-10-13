@@ -47,6 +47,8 @@ async function main(){
   const runtime=path.join(path.dirname(executable),'resources/gateway/codex-mobile-gateway.exe');
   await fs.mkdir(path.join(root,'.tmp'),{recursive:true});
   const data=await fs.mkdtemp(path.join(root,'.tmp','Windows App \u4e2d\u6587 '));
+  await fs.mkdir(path.join(data,'desktop-sessions'),{recursive:true});
+  await fs.writeFile(path.join(data,'desktop-sessions/settings.json'),JSON.stringify({enabled:{codex:false,claude:false,deepseek:false}}));
   const port=await freePort(),debugPort=await freePort();
   const env={...process.env,CMB_DATA_DIR:data,PATH:path.join(process.env.SystemRoot,'System32')};
   for(const key of ['CMB_PYTHON','PYTHONPATH','PYTHONHOME','ELECTRON_RUN_AS_NODE'])delete env[key];
@@ -68,7 +70,7 @@ async function main(){
   assert.equal(settings.preferences.lan,false,'Fresh installs must not expose LAN access');
   assert.equal(settings.preferences.localAccess,false,'Fresh installs must not enable local browser access');
   assert.deepEqual(settings.urls,[],'Fresh installs must not advertise local or LAN entries');
-  Object.assign(settings.preferences,{port,lan:true,localAccess:true,tunnel:false,codexHome:data,autoStart:false,connections:[
+  Object.assign(settings.preferences,{port,lan:true,localAccess:true,tunnel:false,codexHome:data,codexBin:path.join(data,'absent-codex-runtime'),autoStart:false,connections:[
     {id:'smoke-server',name:'Server test',enabled:true,accessMode:'server',publicUrl:'https://server.example.com',sshTarget:'test-only',sshRemotePort:18787},
     {id:'smoke-nas',name:'NAS test',enabled:true,accessMode:'nas',publicUrl:'https://nas.example.com',proxyUpstream:'http://192.0.2.1:'+port},
     {id:'smoke-quick',name:'Temporary test',enabled:false,accessMode:'quick'}

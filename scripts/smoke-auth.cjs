@@ -10,6 +10,8 @@ async function main(){
     'win-unpacked/resources/gateway/codex-mobile-gateway.exe');
   await fs.mkdir(path.join(root,'.tmp'),{recursive:true});
   const dataDir=await fs.mkdtemp(path.join(root,'.tmp','auth-中文 '));
+  await fs.mkdir(path.join(dataDir,'desktop-sessions'),{recursive:true});
+  await fs.writeFile(path.join(dataDir,'desktop-sessions/settings.json'),JSON.stringify({enabled:{codex:false,claude:false,deepseek:false}}));
   const probe=net.createServer();await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));
   const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
   const worker=(action,payload)=>runWorker({executable,dataDir},action,payload),base='http://127.0.0.1:'+port;
@@ -26,7 +28,7 @@ async function main(){
   }
   try{
     let state=await worker('snapshot');
-    Object.assign(state.preferences,{codexHome:dataDir,port,autoStart:false,lan:false,localAccess:true,tunnel:false,connections:[]});
+    Object.assign(state.preferences,{codexHome:dataDir,codexBin:path.join(dataDir,'absent-codex-runtime'),port,autoStart:false,lan:false,localAccess:true,tunnel:false,connections:[]});
     Object.assign(state.auth,{sessionHours:0,password});await worker('save',state);
     await start();let signed=await login();assert.equal(signed.status,200);assert.match(signed.cookie,/Max-Age=34560000/);
     let cookie=signed.cookie.split(';')[0];

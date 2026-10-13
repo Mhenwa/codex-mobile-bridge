@@ -7,6 +7,8 @@ const {PNG}=require('pngjs'),decode=require('jsqr');
 const root=path.resolve(__dirname,'..');
 fs.mkdirSync(path.join(root,'.tmp'),{recursive:true});
 const data=fs.mkdtempSync(path.join(root,'.tmp','pairing-browser-'));
+fs.mkdirSync(path.join(data,'desktop-sessions'),{recursive:true});
+fs.writeFileSync(path.join(data,'desktop-sessions/settings.json'),JSON.stringify({enabled:{codex:false,claude:false,deepseek:false}}));
 process.env.CMB_DATA_DIR=data;
 app.setPath('userData',path.join(data,'browser'));
 const workerConfig=process.env.CMB_TEST_RUNTIME?{executable:process.env.CMB_TEST_RUNTIME,dataDir:data}:workerFor({root,dataDir:data,packaged:false});
@@ -18,7 +20,7 @@ app.whenReady().then(async()=>{
   let desktop,phone,nativePhone,started=false,exitCode=0;
   try{
     const value=await worker('snapshot');
-    value.preferences={...value.preferences,port:await freePort(),lan:true,localAccess:true,tunnel:false,connections:[],autoStart:false,codexHome:data,ipcPath:path.join(data,'unavailable.sock')};
+    value.preferences={...value.preferences,port:await freePort(),lan:true,localAccess:true,tunnel:false,connections:[],autoStart:false,codexHome:data,codexBin:path.join(data,'absent-codex-runtime'),ipcPath:path.join(data,'unavailable.sock')};
     value.auth.password='isolated-qr-test-password';await worker('save',value);
     await worker('start');started=true;await until(async()=>(await worker('snapshot')).runtime.running,'gateway');
     desktop=new BrowserWindow({show:false,width:900,height:1000,webPreferences:{preload:path.join(__dirname,'smoke-pairing-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:false}});

@@ -12,6 +12,8 @@ async function main(){
     'win-unpacked/resources/gateway/codex-mobile-gateway.exe');
   await fs.mkdir(path.join(root,'.tmp'),{recursive:true});
   const dataDir=await fs.mkdtemp(path.join(root,'.tmp','notifications-中文 '));
+  await fs.mkdir(path.join(dataDir,'desktop-sessions'),{recursive:true});
+  await fs.writeFile(path.join(dataDir,'desktop-sessions/settings.json'),JSON.stringify({enabled:{codex:false,claude:false,deepseek:false}}));
   const requests=[];let rejectBark=false;
   const server=http.createServer(async(request,response)=>{
     try{
@@ -25,7 +27,7 @@ async function main(){
   const base='http://127.0.0.1:'+server.address().port,worker=(action,payload)=>runWorker({executable,dataDir},action,payload);
   try{
     let state=await worker('snapshot');
-    Object.assign(state.preferences,{codexHome:dataDir,autoStart:false,lan:false,tunnel:false,connections:[]});
+    Object.assign(state.preferences,{codexHome:dataDir,codexBin:path.join(dataDir,'absent-codex-runtime'),autoStart:false,lan:false,tunnel:false,connections:[]});
     Object.assign(state.notifications,{enabled:false,topic:'',barkEnabled:true,barkServer:base+'/bark',barkKey:'synthetic-bark-key'});
     state=await worker('save',state);
     assert.equal(state.notifications.enabled,false);assert.equal(state.notifications.barkEnabled,true);
